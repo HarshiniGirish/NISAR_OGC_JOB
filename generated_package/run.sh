@@ -5,7 +5,22 @@ echo "Starting nisar_access_subset"
 
 basedir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 OUTDIR="${USER_OUTPUT_DIR:-${OUTPUT_DIR:-output}}"
-ENV_PREFIX="${CONDA_ENV_PREFIX:-/opt/conda/envs/nisar_access_subset}"
+
+determine_env_prefix() {
+  if [ -n "${CONDA_ENV_PREFIX:-}" ]; then
+    printf '%s\n' "${CONDA_ENV_PREFIX}"
+    return
+  fi
+
+  if [ -w /opt/conda/envs ] || { [ ! -e /opt/conda/envs ] && [ -w /opt/conda ]; }; then
+    printf '%s\n' "/opt/conda/envs/nisar_access_subset"
+    return
+  fi
+
+  printf '%s\n' "${HOME}/.conda/envs/nisar_access_subset"
+}
+
+ENV_PREFIX="$(determine_env_prefix)"
 
 mkdir -p "${OUTDIR}"
 

@@ -479,9 +479,25 @@ def build_build_script(
 set -euo pipefail
 
 basedir="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd -P)"
-ENV_PREFIX="${{CONDA_ENV_PREFIX:-/opt/conda/envs/{name}}}"
+
+determine_env_prefix() {{
+  if [ -n "${{CONDA_ENV_PREFIX:-}}" ]; then
+    printf '%s\\n' "${{CONDA_ENV_PREFIX}}"
+    return
+  fi
+
+  if [ -w /opt/conda/envs ] || {{ [ ! -e /opt/conda/envs ] && [ -w /opt/conda ]; }}; then
+    printf '%s\\n' "/opt/conda/envs/{name}"
+    return
+  fi
+
+  printf '%s\\n' "${{HOME}}/.conda/envs/{name}"
+}}
+
+ENV_PREFIX="$(determine_env_prefix)"
 
 if command -v conda >/dev/null 2>&1; then
+  mkdir -p "$(dirname "${{ENV_PREFIX}}")"
   conda env remove -p "${{ENV_PREFIX}}" -y || true
   conda env create -f "${{basedir}}/env.yml" --prefix "${{ENV_PREFIX}}"
   conda clean -afy
@@ -760,6 +776,14 @@ The generator can run without an `app.yml` manifest. It infers command-line inpu
 - `report.md`
 
 Review all generated files before OGC execution or MAAP DPS registration.
+
+## Conda environment location
+
+The generated scripts use `CONDA_ENV_PREFIX` when it is set. Otherwise they use
+`/opt/conda/envs/{name}` when that location is writable, and fall back to the
+user-writable path:
+
+`$HOME/.conda/envs/{name}`
 """
 
     write_text(output_dir / "README.md", readme)

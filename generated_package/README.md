@@ -21,3 +21,11 @@ The generator can run without an `app.yml` manifest. It infers command-line inpu
 - `report.md`
 
 Review all generated files before OGC execution or MAAP DPS registration.
+
+## Conda environment location
+
+The generated scripts use `CONDA_ENV_PREFIX` when it is set. Otherwise they use
+`/opt/conda/envs/nisar_access_subset` when that location is writable, and fall back to the
+user-writable path:
+
+`$HOME/.conda/envs/nisar_access_subset`

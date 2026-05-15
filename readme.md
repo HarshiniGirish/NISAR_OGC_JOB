@@ -81,6 +81,19 @@ cd generated_package
 ./build.sh
 ```
 
+In MAAP ADE/Jupyter, `/opt/conda/envs` may not be writable. The generated
+`build.sh` handles this automatically by falling back to:
+
+```text
+$HOME/.conda/envs/nisar_access_subset
+```
+
+You can also choose your own location:
+
+```bash
+CONDA_ENV_PREFIX="$HOME/.conda/envs/nisar_access_subset" ./build.sh
+```
+
 Run the generated package:
 
 ```bash
