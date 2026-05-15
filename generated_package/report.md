@@ -51,9 +51,9 @@
 - conda: `botocore`
 - conda: `fsspec`
 - conda: `h5netcdf`
-- conda: `numcodecs`
+- conda: `numcodecs<0.16`
 - conda: `requests`
-- conda: `zarr`
+- conda: `zarr<3`
 
 ## Resolved Dependencies
 
@@ -64,13 +64,13 @@
 - conda: `fsspec`
 - conda: `h5netcdf`
 - conda: `h5py`
-- conda: `numcodecs`
+- conda: `numcodecs<0.16`
 - conda: `numpy`
 - conda: `pyproj`
 - conda: `requests`
 - conda: `s3fs`
 - conda: `xarray`
-- conda: `zarr`
+- conda: `zarr<3`
 - conda: `pip`
 - pip: `maap-py`
 
@@ -208,9 +208,9 @@
       "botocore",
       "fsspec",
       "h5netcdf",
-      "numcodecs",
+      "numcodecs<0.16",
       "requests",
-      "zarr"
+      "zarr<3"
     ],
     "pip": []
   },
@@ -223,13 +223,13 @@
       "fsspec",
       "h5netcdf",
       "h5py",
-      "numcodecs",
+      "numcodecs<0.16",
       "numpy",
       "pyproj",
       "requests",
       "s3fs",
       "xarray",
-      "zarr",
+      "zarr<3",
       "pip"
     ],
     "pip": [

@@ -26,7 +26,7 @@ DEFAULT_BASE_CONTAINER = "mas.maap-project.org/root/maap-workspaces/custom_image
 DEFAULT_TARGET = "ogc"
 EXCLUDED_RUNTIME_INPUTS = {"out_dir"}
 IMPLICIT_DEPENDENCY_RULES = {
-    ".to_zarr": {"conda": ["zarr", "numcodecs"], "pip": []},
+    ".to_zarr": {"conda": ["zarr<3", "numcodecs<0.16"], "pip": []},
     "s3fs": {"conda": ["fsspec", "boto3", "botocore"], "pip": []},
     "earthaccess": {"conda": ["requests"], "pip": []},
     "h5py": {"conda": ["h5netcdf"], "pip": []},
@@ -784,6 +784,12 @@ The generated scripts use `CONDA_ENV_PREFIX` when it is set. Otherwise they use
 user-writable path:
 
 `$HOME/.conda/envs/{name}`
+
+## NISAR demo tip
+
+For a quick ADE/Jupyter smoke test, pass a small `--bbox` and `--bbox_crs`.
+Running without a bbox can try to write the full granule and may be slow or
+memory-heavy.
 """
 
     write_text(output_dir / "README.md", readme)

@@ -100,6 +100,23 @@ Run the generated package:
 ./run.sh
 ```
 
+For a real NISAR smoke test, use Earthdata credentials and pass a small bbox so
+the demo does not write the entire granule:
+
+```bash
+export EARTHDATA_USERNAME="your_username"
+export EARTHDATA_PASSWORD="your_password"
+
+./run.sh \
+  --access_mode https \
+  --https_href "https://nisar.asf.earthdatacloud.nasa.gov/NISAR/NISAR_L2_GCOV_BETA_V1/NISAR_L2_PR_GCOV_002_109_D_063_4005_DHDH_A_20251012T182508_20251012T182531_X05010_N_P_J_001/NISAR_L2_PR_GCOV_002_109_D_063_4005_DHDH_A_20251012T182508_20251012T182531_X05010_N_P_J_001.h5" \
+  --vars "HHHH" \
+  --group "/science/LSAR/GCOV/grids/frequencyA" \
+  --bbox "148325,5392805,519115,5759995" \
+  --bbox_crs "EPSG:32633" \
+  --out_name "nisar_subset.zarr"
+```
+
 ## Key files
 
 - `input/nisar_access_subset.py` - example user science code

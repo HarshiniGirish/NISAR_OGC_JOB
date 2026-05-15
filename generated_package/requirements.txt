@@ -5,10 +5,10 @@ fsspec
 h5netcdf
 h5py
 maap-py
-numcodecs
+numcodecs<0.16
 numpy
 pyproj
 requests
 s3fs
 xarray
-zarr
+zarr<3

@@ -29,3 +29,9 @@ The generated scripts use `CONDA_ENV_PREFIX` when it is set. Otherwise they use
 user-writable path:
 
 `$HOME/.conda/envs/nisar_access_subset`
+
+## NISAR demo tip
+
+For a quick ADE/Jupyter smoke test, pass a small `--bbox` and `--bbox_crs`.
+Running without a bbox can try to write the full granule and may be slow or
+memory-heavy.

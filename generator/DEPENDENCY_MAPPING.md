@@ -6,8 +6,8 @@ maps them to installable packages using `dependency_map.yml`.
 | Python import | Generated package dependency | Notes |
 | --- | --- | --- |
 | `numpy` | `numpy` | Numerical array operations. |
-| `xarray` | `xarray` | Dataset abstraction; also triggers implicit `zarr`/`numcodecs` when `.to_zarr(...)` is detected. |
-| `zarr` | `zarr` | Zarr output support. |
+| `xarray` | `xarray` | Dataset abstraction; also triggers implicit `zarr<3`/`numcodecs<0.16` when `.to_zarr(...)` is detected. |
+| `zarr` | `zarr<3` | Stable Zarr v2 output support; avoids Zarr v3 async shutdown warnings in ADE demos. |
 | `h5py` | `h5py` | HDF5 access; this NISAR example also adds `h5netcdf` implicitly. |
 | `h5netcdf` | `h5netcdf` | NetCDF/HDF5 backend compatibility. |
 | `fsspec` | `fsspec` | Filesystem abstraction. |
@@ -32,7 +32,7 @@ Some dependencies are required even when they are not imported directly:
 
 | Detected pattern | Extra generated dependency |
 | --- | --- |
-| `.to_zarr(...)` | `zarr`, `numcodecs` |
+| `.to_zarr(...)` | `zarr<3`, `numcodecs<0.16` |
 | `s3fs` import | `fsspec`, `boto3`, `botocore` |
 | `earthaccess` import | `requests` |
 | `h5py` import | `h5netcdf` |
