@@ -1,0 +1,105 @@
+algorithm_name: nisar_access_subset
+algorithm_version: main
+
+algorithm_description: "MAAP OGC Application package that pulls a subset of variables from identified NISAR granules and writes a Zarr output."
+
+code_repository: https://github.com/HarshiniGirish/NISAR_DPS_JOB
+
+run_command: NISAR_DPS_JOB/run.sh
+build_command: NISAR_DPS_JOB/build.sh
+
+ram_min: 8
+cores_min: 2
+
+base_container_url: mas.maap-project.org/root/maap-workspaces/custom_images/maap_base:v5.0.0
+
+inputs:
+  - name: access_mode
+    label: access_mode
+    doc: access_mode
+    type: string
+    default: auto
+
+  - name: https_href
+    label: https_href
+    doc: https_href
+    type: string
+    default: "https://nisar.asf.earthdatacloud.nasa.gov/NISAR/NISAR_L2_GCOV_BETA_V1/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001.h5"
+
+  - name: s3_href
+    label: s3_href
+    doc: s3_href
+    type: string
+    default: "s3://sds-n-cumulus-prod-nisar-products/NISAR_L2_GCOV_BETA_V1/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001.h5"
+
+  - name: short_name
+    label: short_name
+    doc: short_name
+    type: string
+    default: NISAR_L2_GCOV_BETA_V1
+
+  - name: count
+    label: count
+    doc: count
+    type: string
+    default: "10"
+
+  - name: granule_index
+    label: granule_index
+    doc: granule_index
+    type: string
+    default: "0"
+
+  - name: asf_s3_creds_url
+    label: asf_s3_creds_url
+    doc: asf_s3_creds_url
+    type: string
+    default: "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials"
+
+  - name: vars
+    label: vars
+    doc: vars
+    type: string
+    default: HHHH
+
+  - name: group
+    label: group
+    doc: group
+    type: string
+    default: /science/LSAR/GCOV/grids/frequencyA
+
+  - name: x_path
+    label: x_path
+    doc: x_path
+    type: string
+    default: /science/LSAR/GCOV/grids/frequencyA/xCoordinates
+
+  - name: y_path
+    label: y_path
+    doc: y_path
+    type: string
+    default: /science/LSAR/GCOV/grids/frequencyA/yCoordinates
+
+  - name: bbox
+    label: bbox
+    doc: bbox
+    type: string
+    default: "750000,2450000,800000,2500000"
+
+  - name: bbox_crs
+    label: bbox_crs
+    doc: bbox_crs
+    type: string
+    default: EPSG:32643
+
+  - name: out_name
+    label: out_name
+    doc: out_name
+    type: string
+    default: nisar_subset.zarr
+
+outputs:
+  - name: out
+    type: Directory
+
+outdir_max: 20
