@@ -1,0 +1,10 @@
+FROM {{ base_container }}
+
+WORKDIR /opt/app
+
+COPY . /opt/app
+
+RUN chmod +x /opt/app/run.sh || true
+RUN chmod +x /opt/app/build.sh || true
+
+ENTRYPOINT ["/opt/app/run.sh"]
