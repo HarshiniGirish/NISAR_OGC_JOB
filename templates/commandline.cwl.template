@@ -1,0 +1,15 @@
+cwlVersion: v1.2
+class: CommandLineTool
+
+baseCommand:
+  - python
+  - /opt/app/{{ entrypoint }}
+
+inputs:
+{{ cwl_inputs_block }}
+
+outputs:
+  output:
+    type: Directory
+    outputBinding:
+      glob: output
