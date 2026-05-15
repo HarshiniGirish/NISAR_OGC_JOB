@@ -1,0 +1,18 @@
+algorithm_name: {{ name }}
+algorithm_version: {{ version }}
+algorithm_description: "{{ description }}"
+
+repository_url: "{{ repository_url }}"
+docker_container_url: "{{ base_container }}"
+
+run_command: "./run.sh"
+build_command: "./build.sh"
+
+inputs:
+{{ algorithm_inputs_block }}
+
+outputs:
+  output:
+    title: Output directory
+    description: "{{ output_description }}"
+    type: directory
