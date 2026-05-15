@@ -3,10 +3,19 @@ set -euo pipefail
 
 echo "Starting {{ name }}"
 
-mkdir -p output
+basedir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+OUTDIR="${USER_OUTPUT_DIR:-${OUTPUT_DIR:-output}}"
+ENV_PREFIX="${CONDA_ENV_PREFIX:-/opt/conda/envs/{{ name }}}"
 
-python /opt/app/{{ entrypoint }} "$@"
+mkdir -p "${OUTDIR}"
+
+if command -v conda >/dev/null 2>&1 && [ -d "${ENV_PREFIX}" ]; then
+  conda run --live-stream -p "${ENV_PREFIX}" \
+    python "${basedir}/{{ entrypoint }}" --out_dir "${OUTDIR}" "$@"
+else
+  python "${basedir}/{{ entrypoint }}" --out_dir "${OUTDIR}" "$@"
+fi
 
 echo "Finished {{ name }}"
 echo "Output directory contents:"
-ls -lah output || true
+find "${OUTDIR}" -maxdepth 3 -print || true

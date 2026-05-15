@@ -1,18 +1,23 @@
 algorithm_name: {{ name }}
 algorithm_version: {{ version }}
+
 algorithm_description: "{{ description }}"
 
-repository_url: "{{ repository_url }}"
-docker_container_url: "{{ base_container }}"
+code_repository: {{ repository_url }}
 
-run_command: "./run.sh"
-build_command: "./build.sh"
+run_command: NISAR_OGC_JOB/generated_package/run.sh
+build_command: NISAR_OGC_JOB/generated_package/build.sh
+
+ram_min: {{ ram_min }}
+cores_min: {{ cores_min }}
+
+base_container_url: {{ base_container }}
 
 inputs:
 {{ algorithm_inputs_block }}
 
 outputs:
-  output:
-    title: Output directory
-    description: "{{ output_description }}"
-    type: directory
+  - name: out
+    type: Directory
+
+outdir_max: {{ outdir_max }}

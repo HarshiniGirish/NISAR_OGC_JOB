@@ -1,15 +1,15 @@
 cwlVersion: v1.2
 class: CommandLineTool
+label: {{ name }}
 
 baseCommand:
-  - python
-  - /opt/app/{{ entrypoint }}
+  - /opt/app/run.sh
 
 inputs:
 {{ cwl_inputs_block }}
 
 outputs:
-  output:
+  out:
     type: Directory
     outputBinding:
       glob: output
