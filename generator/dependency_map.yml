@@ -1,0 +1,40 @@
+# Python standard library modules.
+# These should NOT be added to env.yml.
+argparse: null
+ast: null
+collections: null
+datetime: null
+functools: null
+glob: null
+json: null
+logging: null
+math: null
+os: null
+pathlib: null
+re: null
+shutil: null
+subprocess: null
+sys: null
+tempfile: null
+time: null
+typing: null
+warnings: null
+
+# External Python packages.
+numpy: numpy
+pandas: pandas
+xarray: xarray
+zarr: zarr
+h5py: h5py
+h5netcdf: h5netcdf
+fsspec: fsspec
+s3fs: s3fs
+requests: requests
+earthaccess: earthaccess
+pyproj: pyproj
+boto3: boto3
+botocore: botocore
+maap: maap-py
+rasterio: rasterio
+geopandas: geopandas
+shapely: shapely
