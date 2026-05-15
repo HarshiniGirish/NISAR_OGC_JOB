@@ -286,12 +286,63 @@ def _get_s3_credentials(asf_s3_creds_url: str) -> dict:
             "sessionToken": env_token,
         }
 
-    from maap.maap import MAAP
+    maap_error = None
+    try:
+        from maap.maap import MAAP
 
-    maap = MAAP()
-    creds = maap.aws.earthdata_s3_credentials(asf_s3_creds_url)
-    print("USING_S3_CREDS_SOURCE: maap")
-    return creds
+        maap = MAAP()
+        creds = maap.aws.earthdata_s3_credentials(asf_s3_creds_url)
+        print("USING_S3_CREDS_SOURCE: maap")
+        return _normalize_s3_credentials(creds)
+    except Exception as exc:
+        maap_error = exc
+        print("MAAP_S3_CREDS_FAILED:", exc)
+
+    if _earthaccess_available_noninteractive():
+        try:
+            creds = _get_s3_credentials_with_earthaccess(asf_s3_creds_url)
+            print("USING_S3_CREDS_SOURCE: earthaccess")
+            return creds
+        except Exception as exc:
+            print("EARTHACCESS_S3_CREDS_FAILED:", exc)
+
+    raise RuntimeError(
+        "Unable to obtain temporary S3 credentials for NISAR access. "
+        f"MAAP credential request failed with: {maap_error}. "
+        "To run in ADE/Jupyter, either set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, "
+        "and AWS_SESSION_TOKEN in the environment, or configure non-interactive "
+        "Earthdata credentials using EARTHDATA_USERNAME/EARTHDATA_PASSWORD or ~/.netrc. "
+        "In DPS, S3 credentials are normally injected by the runtime."
+    )
+
+
+def _normalize_s3_credentials(creds: dict) -> dict:
+    key = creds.get("accessKeyId") or creds.get("AccessKeyId") or creds.get("aws_access_key_id")
+    secret = (
+        creds.get("secretAccessKey")
+        or creds.get("SecretAccessKey")
+        or creds.get("aws_secret_access_key")
+    )
+    token = creds.get("sessionToken") or creds.get("SessionToken") or creds.get("aws_session_token")
+
+    if not key or not secret or not token:
+        raise RuntimeError(
+            "S3 credential response did not contain accessKeyId, secretAccessKey, and sessionToken."
+        )
+
+    return {
+        "accessKeyId": key,
+        "secretAccessKey": secret,
+        "sessionToken": token,
+    }
+
+
+def _get_s3_credentials_with_earthaccess(asf_s3_creds_url: str) -> dict:
+    auth = _login_earthaccess_noninteractive()
+    session = auth.get_session()
+    response = session.get(asf_s3_creds_url, timeout=(30, 60))
+    response.raise_for_status()
+    return _normalize_s3_credentials(response.json())
 
 
 def _download_https_to_tempfile(https_href: str) -> Tuple[str, str, str]:
