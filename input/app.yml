@@ -1,0 +1,60 @@
+name: nisar_access_subset
+version: main
+target: ogc_dps
+entrypoint: nisar_access_subset.py
+
+description: "PoC-generated OGC/DPS package for accessing and subsetting a NISAR GCOV granule."
+repository_url: "https://github.com/MAAP-Project/NISAR_DPS_JOB"
+base_container: "mas.maap-project.org/root/maap-workspaces/custom_images/maap_base:v5.0.0"
+
+inputs:
+  access_mode:
+    type: string
+    default: s3
+    description: "Access mode to use: s3, https, or auto."
+
+  s3_href:
+    type: string
+    default: ""
+    description: "S3 path to the NISAR GCOV HDF5 file."
+
+  https_href:
+    type: string
+    default: ""
+    description: "HTTPS URL to the NISAR GCOV HDF5 file."
+
+  vars:
+    type: string
+    default: HHHH
+    description: "Comma-separated variable names to subset."
+
+  group:
+    type: string
+    default: /science/LSAR/GCOV/grids/frequencyA
+    description: "HDF5 group path containing the NISAR GCOV raster variables."
+
+  bbox:
+    type: string
+    default: ""
+    description: "Optional bounding box: minx,miny,maxx,maxy."
+
+  bbox_crs:
+    type: string
+    default: ""
+    description: "CRS of the bounding box, for example EPSG:32633."
+
+  out_name:
+    type: string
+    default: nisar_subset.zarr
+    description: "Name of the output Zarr store."
+
+outputs:
+  output:
+    type: directory
+    path: output
+    description: "Output directory containing the Zarr result and manifest."
+
+dependencies:
+  conda:
+    - python=3.11
+  pip: []
