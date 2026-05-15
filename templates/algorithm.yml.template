@@ -5,8 +5,8 @@ algorithm_description: "{{ description }}"
 
 code_repository: {{ repository_url }}
 
-run_command: NISAR_OGC_JOB/generated_package/run.sh
-build_command: NISAR_OGC_JOB/generated_package/build.sh
+run_command: {{ repository_name }}/generated_package/run.sh
+build_command: {{ repository_name }}/generated_package/build.sh
 
 ram_min: {{ ram_min }}
 cores_min: {{ cores_min }}

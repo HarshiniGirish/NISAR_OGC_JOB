@@ -1,7 +1,7 @@
 algorithm_name: nisar_access_subset
 algorithm_version: main
 
-algorithm_description: "PoC-generated OGC/DPS package for accessing and subsetting a NISAR GCOV granule."
+algorithm_description: "Subset selected variables from a NISAR GCOV granule and write a Zarr store."
 
 code_repository: https://github.com/HarshiniGirish/NISAR_OGC_JOB
 
@@ -16,72 +16,72 @@ base_container_url: mas.maap-project.org/root/maap-workspaces/custom_images/maap
 inputs:
   - name: access_mode
     label: access_mode
-    doc: "Access mode to use: s3, https, or auto."
+    doc: "Allowed values: auto, s3, https."
     type: string
-    default: "s3"
-  - name: s3_href
-    label: s3_href
-    doc: "S3 path to the NISAR GCOV HDF5 file."
-    type: string
-    default: "s3://sds-n-cumulus-prod-nisar-products/NISAR_L2_GCOV_BETA_V1/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001.h5"
+    default: "auto"
   - name: https_href
     label: https_href
-    doc: "HTTPS URL to the NISAR GCOV HDF5 file."
+    doc: ""
     type: string
-    default: "https://nisar.asf.earthdatacloud.nasa.gov/NISAR/NISAR_L2_GCOV_BETA_V1/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001/NISAR_L2_PR_GCOV_003_005_D_077_4005_DHDH_A_20251017T132451_20251017T132526_X05007_N_F_J_001.h5"
+    default: ""
+  - name: s3_href
+    label: s3_href
+    doc: ""
+    type: string
+    default: ""
   - name: short_name
     label: short_name
-    doc: "Earthdata/CMR short name to search when explicit hrefs are not provided."
+    doc: ""
     type: string
     default: "NISAR_L2_GCOV_BETA_V1"
   - name: count
     label: count
-    doc: "Maximum CMR search result count."
-    type: string
-    default: "10"
+    doc: ""
+    type: integer
+    default: 10
   - name: granule_index
     label: granule_index
-    doc: "Zero-based index of the search result to use."
-    type: string
-    default: "0"
+    doc: ""
+    type: integer
+    default: 0
   - name: asf_s3_creds_url
     label: asf_s3_creds_url
-    doc: "ASF endpoint used to request temporary Earthdata S3 credentials."
+    doc: ""
     type: string
     default: "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials"
-  - name: vars
-    label: vars
-    doc: "Comma-separated variable names to subset."
-    type: string
-    default: "HHHH"
   - name: group
     label: group
-    doc: "HDF5 group path containing the NISAR GCOV raster variables."
+    doc: ""
     type: string
     default: "/science/LSAR/GCOV/grids/frequencyA"
+  - name: vars
+    label: vars
+    doc: ""
+    type: string
+    default: "HHHH"
   - name: x_path
     label: x_path
-    doc: "HDF5 path to the x coordinate vector."
+    doc: ""
     type: string
     default: "/science/LSAR/GCOV/grids/frequencyA/xCoordinates"
   - name: y_path
     label: y_path
-    doc: "HDF5 path to the y coordinate vector."
+    doc: ""
     type: string
     default: "/science/LSAR/GCOV/grids/frequencyA/yCoordinates"
   - name: bbox
     label: bbox
-    doc: "Optional bounding box: minx,miny,maxx,maxy."
+    doc: ""
     type: string
-    default: "750000,2450000,800000,2500000"
+    default: ""
   - name: bbox_crs
     label: bbox_crs
-    doc: "CRS of the bounding box, for example EPSG:32633."
+    doc: ""
     type: string
-    default: "EPSG:32643"
+    default: ""
   - name: out_name
     label: out_name
-    doc: "Name of the output Zarr store."
+    doc: ""
     type: string
     default: "nisar_subset.zarr"
 
