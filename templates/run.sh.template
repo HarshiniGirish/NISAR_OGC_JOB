@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Starting {{ name }}"
+
+mkdir -p output
+
+python /opt/app/{{ entrypoint }} "$@"
+
+echo "Finished {{ name }}"
+echo "Output directory contents:"
+ls -lah output || true
