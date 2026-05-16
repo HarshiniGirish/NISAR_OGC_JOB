@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "maap-package-service"
+version = "0.1.0"
+description = "Analyze user scripts or notebooks and generate MAAP DPS and OGC application packages."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+cwl = [
+  "cwltool",
+]
+
+[project.scripts]
+maap-package-service = "maap_package_service.cli:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
