@@ -1,0 +1,27 @@
+name: nisar-access-subset
+version: 0.1.0
+target: both
+entrypoint: sample_notebook.ipynb
+base_container: python:3.11-slim
+resources:
+  cores_min: 2
+  ram_min: 8
+  outdir_max: 20
+inputs:
+  bbox:
+    type: string
+    default: ""
+    description: Bounding box in source CRS.
+outputs:
+  output:
+    type: directory
+    path: output
+    description: Generated output directory.
+dependencies:
+  conda:
+    - python=3.11
+  pip:
+    - notebook
+environment:
+  - EARTHDATA_USERNAME
+  - EARTHDATA_PASSWORD
