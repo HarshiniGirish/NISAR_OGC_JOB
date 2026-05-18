@@ -139,6 +139,18 @@ cd generated_opera_package
 ./run.sh --idx-window "0:1024,0:1024"
 ```
 
+`input/app_opera.yaml` is prefilled with this OPERA DISP-S1 granule:
+
+```text
+OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z
+```
+
+and its direct S3 NetCDF URL:
+
+```text
+s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc
+```
+
 Legacy MAAP `algorithm.yml`/`algorithm_ogc.yml` files are accepted as metadata
 overrides, but a small app-specific `app.yaml` is cleaner when you want exact
 input names and defaults for a new project.

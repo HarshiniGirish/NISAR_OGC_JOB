@@ -21,9 +21,9 @@ inputs:
     default: "OPERA_L3_DISP-S1_V1"
   - name: temporal
     label: temporal
-    doc: "Optional CMR temporal range."
+    doc: "Optional CMR temporal range for the supplied OPERA DISP-S1 granule."
     type: string
-    default: "2016-07-01T00:00:00Z,2024-12-31T23:59:59Z"
+    default: "2025-10-01T13:42:14Z,2025-10-13T13:42:14Z"
   - name: bbox
     label: bbox
     doc: "Optional WGS84 bbox minx,miny,maxx,maxy."
@@ -36,9 +36,9 @@ inputs:
     default: 10
   - name: granule_ur
     label: granule_ur
-    doc: "Optional fixed CMR GranuleUR."
+    doc: "Fixed CMR GranuleUR for the supplied OPERA DISP-S1 example."
     type: string
-    default: ""
+    default: "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z"
   - name: tile
     label: tile
     doc: "COG tile size."
@@ -66,9 +66,9 @@ inputs:
     default: "0:1024,0:1024"
   - name: s3_url
     label: s3_url
-    doc: "Optional direct s3:// granule URL to bypass CMR search."
+    doc: "Direct S3 URL for the supplied OPERA DISP-S1 NetCDF granule; bypasses CMR search."
     type: string
-    default: ""
+    default: "s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc"
 
 outputs:
   - name: out

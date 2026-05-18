@@ -13,7 +13,7 @@ inputs:
       prefix: --short-name
   temporal:
     type: string
-    default: "2016-07-01T00:00:00Z,2024-12-31T23:59:59Z"
+    default: "2025-10-01T13:42:14Z,2025-10-13T13:42:14Z"
     inputBinding:
       prefix: --temporal
   bbox:
@@ -28,7 +28,7 @@ inputs:
       prefix: --limit
   granule_ur:
     type: string
-    default: ""
+    default: "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z"
     inputBinding:
       prefix: --granule-ur
   tile:
@@ -58,7 +58,7 @@ inputs:
       prefix: --idx-window
   s3_url:
     type: string
-    default: ""
+    default: "s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc"
     inputBinding:
       prefix: --s3-url
 

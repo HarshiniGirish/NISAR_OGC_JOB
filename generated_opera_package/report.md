@@ -32,16 +32,16 @@
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
 | `short_name` | `string` | `OPERA_L3_DISP-S1_V1` | CMR short name for OPERA DISP-S1. |
-| `temporal` | `string` | `2016-07-01T00:00:00Z,2024-12-31T23:59:59Z` | Optional CMR temporal range. |
+| `temporal` | `string` | `2025-10-01T13:42:14Z,2025-10-13T13:42:14Z` | Optional CMR temporal range for the supplied OPERA DISP-S1 granule. |
 | `bbox` | `string` | `` | Optional WGS84 bbox minx,miny,maxx,maxy. |
 | `limit` | `integer` | `10` | Maximum granules to search. |
-| `granule_ur` | `string` | `` | Optional fixed CMR GranuleUR. |
+| `granule_ur` | `string` | `OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z` | Fixed CMR GranuleUR for the supplied OPERA DISP-S1 example. |
 | `tile` | `integer` | `256` | COG tile size. |
 | `compress` | `string` | `DEFLATE` | COG compression method. |
 | `overview_resampling` | `string` | `nearest` | COG overview resampling method. |
 | `out_name` | `string` | `water_mask_subset.cog.tif` | Output COG filename. |
 | `idx_window` | `string` | `0:1024,0:1024` | Optional index window y0:y1,x0:x1 for smoke tests. |
-| `s3_url` | `string` | `` | Optional direct s3:// granule URL to bypass CMR search. |
+| `s3_url` | `string` | `s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc` | Direct S3 URL for the supplied OPERA DISP-S1 NetCDF granule; bypasses CMR search. |
 
 ## Static Analysis
 
@@ -162,8 +162,8 @@
     },
     "temporal": {
       "type": "string",
-      "default": "2016-07-01T00:00:00Z,2024-12-31T23:59:59Z",
-      "description": "Optional CMR temporal range.",
+      "default": "2025-10-01T13:42:14Z,2025-10-13T13:42:14Z",
+      "description": "Optional CMR temporal range for the supplied OPERA DISP-S1 granule.",
       "inferred": true,
       "source": "argparse",
       "cli_option": "--temporal"
@@ -186,8 +186,8 @@
     },
     "granule_ur": {
       "type": "string",
-      "default": "",
-      "description": "Optional fixed CMR GranuleUR.",
+      "default": "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z",
+      "description": "Fixed CMR GranuleUR for the supplied OPERA DISP-S1 example.",
       "inferred": true,
       "source": "argparse",
       "cli_option": "--granule-ur"
@@ -234,8 +234,8 @@
     },
     "s3_url": {
       "type": "string",
-      "default": "",
-      "description": "Optional direct s3:// granule URL to bypass CMR search.",
+      "default": "s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc",
+      "description": "Direct S3 URL for the supplied OPERA DISP-S1 NetCDF granule; bypasses CMR search.",
       "inferred": true,
       "source": "argparse",
       "cli_option": "--s3-url"
