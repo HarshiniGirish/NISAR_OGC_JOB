@@ -60,6 +60,7 @@ def _normalize_cli_args(argv: List[str]) -> List[str]:
         "--out_dir",
         "--out_name",
         "--allow_full_granule",
+        "--max_output_cells",
     }
 
     normalized: List[str] = []
@@ -101,6 +102,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--max_output_cells",
+        type=int,
+        default=2_000_000,
+        help=(
+            "Maximum output array cells allowed unless --allow_full_granule is set. "
+            "This protects small notebook disks from accidentally writing huge Zarr stores."
+        ),
+    )
+    parser.add_argument(
         "--out_dir",
         default=os.environ.get("USER_OUTPUT_DIR") or os.environ.get("OUTPUT_DIR") or "output",
     )
@@ -131,6 +141,23 @@ def require_bbox_or_explicit_full_granule(args: argparse.Namespace, bbox) -> Non
         "No --bbox was provided. The full NISAR demo granule is large enough to "
         "fill a small notebook disk. Rerun with a small --bbox and --bbox_crs, "
         "or pass --allow_full_granule only when you have enough free space."
+    )
+
+
+def require_reasonable_output_size(ds: xr.Dataset, args: argparse.Namespace) -> None:
+    if args.allow_full_granule:
+        return
+
+    total_cells = sum(int(np.prod(var.shape)) for var in ds.data_vars.values())
+    if total_cells <= args.max_output_cells:
+        return
+
+    dims = ", ".join(f"{name}={size}" for name, size in ds.sizes.items())
+    raise RuntimeError(
+        f"Requested subset has {total_cells:,} output cells ({dims}), which exceeds "
+        f"--max_output_cells={args.max_output_cells:,}. Use a smaller --bbox for the "
+        "notebook smoke test, increase --max_output_cells if you know the output will "
+        "fit, or pass --allow_full_granule only when you have enough disk."
     )
 
 
@@ -547,6 +574,7 @@ def main() -> None:
                 bbox,
                 args.bbox_crs,
             )
+            require_reasonable_output_size(ds, args)
     finally:
         if os.path.exists(local_path):
             os.remove(local_path)

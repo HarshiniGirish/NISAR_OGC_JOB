@@ -8,6 +8,7 @@ maps them to installable packages using `dependency_map.yml`.
 | `numpy` | `numpy` | Numerical array operations. |
 | `xarray` | `xarray` | Dataset abstraction; also triggers implicit `zarr<3`/`numcodecs<0.16` when `.to_zarr(...)` is detected. |
 | `rioxarray` | `rioxarray` | Raster-aware xarray extension used for CRS, clipping, and COG/raster writes. |
+| `dask` | `dask` | Lazy/chunked array execution used by `xarray.open_dataset(..., chunks=...)`. |
 | `zarr` | `zarr<3` | Stable Zarr v2 output support; avoids Zarr v3 async shutdown warnings in ADE demos. |
 | `h5py` | `h5py` | HDF5 access; this NISAR example also adds `h5netcdf` implicitly. |
 | `h5netcdf` | `h5netcdf` | NetCDF/HDF5 backend compatibility. |
@@ -40,7 +41,7 @@ Some dependencies are required even when they are not imported directly:
 | --- | --- |
 | `.to_zarr(...)` | `zarr<3`, `numcodecs<0.16` |
 | `.rio.to_raster(..., driver="COG")` | `rioxarray`, `rasterio` |
-| `xarray.open_dataset(...)` | `h5netcdf`, `netcdf4`, `scipy` |
+| `xarray.open_dataset(...)` | `dask`, `h5netcdf`, `netcdf4`, `scipy` |
 | `s3fs` import | `fsspec`, `boto3`, `botocore` |
 | `earthaccess` import | `requests` |
 | `h5py` import | `h5netcdf` |

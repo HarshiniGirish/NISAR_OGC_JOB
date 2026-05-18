@@ -76,6 +76,11 @@ inputs:
     default: false
     inputBinding:
       prefix: --allow_full_granule
+  max_output_cells:
+    type: int
+    default: 2000000
+    inputBinding:
+      prefix: --max_output_cells
   out_name:
     type: string
     default: "nisar_subset.zarr"

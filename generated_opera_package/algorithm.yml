@@ -1,0 +1,77 @@
+algorithm_name: opera_water_mask_to_cog
+algorithm_version: ogc
+
+algorithm_description: "Export an OPERA DISP-S1 water_mask subset as a Cloud Optimized GeoTIFF."
+
+code_repository: https://github.com/MAAP-Project/OPERA_DPS_JOB
+
+run_command: OPERA_DPS_JOB/generated_package/run.sh
+build_command: OPERA_DPS_JOB/generated_package/build.sh
+
+ram_min: 16
+cores_min: 2
+
+base_container_url: mas.maap-project.org/root/maap-workspaces/base_images/pangeo:v4.1.1
+
+inputs:
+  - name: short_name
+    label: short_name
+    doc: "CMR short name for OPERA DISP-S1."
+    type: string
+    default: "OPERA_L3_DISP-S1_V1"
+  - name: temporal
+    label: temporal
+    doc: "Optional CMR temporal range for the supplied OPERA DISP-S1 granule."
+    type: string
+    default: "2025-10-01T13:42:14Z,2025-10-13T13:42:14Z"
+  - name: bbox
+    label: bbox
+    doc: "Optional WGS84 bbox minx,miny,maxx,maxy."
+    type: string
+    default: ""
+  - name: limit
+    label: limit
+    doc: "Maximum granules to search."
+    type: integer
+    default: 10
+  - name: granule_ur
+    label: granule_ur
+    doc: "Fixed CMR GranuleUR for the supplied OPERA DISP-S1 example."
+    type: string
+    default: "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z"
+  - name: tile
+    label: tile
+    doc: "COG tile size."
+    type: integer
+    default: 256
+  - name: compress
+    label: compress
+    doc: "COG compression method."
+    type: string
+    default: "DEFLATE"
+  - name: overview_resampling
+    label: overview_resampling
+    doc: "COG overview resampling method."
+    type: string
+    default: "nearest"
+  - name: out_name
+    label: out_name
+    doc: "Output COG filename."
+    type: string
+    default: "water_mask_subset.cog.tif"
+  - name: idx_window
+    label: idx_window
+    doc: "Optional index window y0:y1,x0:x1 for smoke tests."
+    type: string
+    default: "0:1024,0:1024"
+  - name: s3_url
+    label: s3_url
+    doc: "Direct S3 URL for the supplied OPERA DISP-S1 NetCDF granule; bypasses CMR search."
+    type: string
+    default: "s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc"
+
+outputs:
+  - name: out
+    type: Directory
+
+outdir_max: 20

@@ -1,0 +1,66 @@
+{
+  "type": "FeatureCollection",
+  "features": [],
+  "links": [],
+  "metadata": {
+    "application": "opera_water_mask_to_cog",
+    "role": "sample-input-manifest",
+    "input_schema": {
+      "short_name": {
+        "type": "string",
+        "default": "OPERA_L3_DISP-S1_V1",
+        "description": "CMR short name for OPERA DISP-S1."
+      },
+      "temporal": {
+        "type": "string",
+        "default": "2025-10-01T13:42:14Z,2025-10-13T13:42:14Z",
+        "description": "Optional CMR temporal range for the supplied OPERA DISP-S1 granule."
+      },
+      "bbox": {
+        "type": "string",
+        "default": "",
+        "description": "Optional WGS84 bbox minx,miny,maxx,maxy."
+      },
+      "limit": {
+        "type": "integer",
+        "default": 10,
+        "description": "Maximum granules to search."
+      },
+      "granule_ur": {
+        "type": "string",
+        "default": "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z",
+        "description": "Fixed CMR GranuleUR for the supplied OPERA DISP-S1 example."
+      },
+      "tile": {
+        "type": "integer",
+        "default": 256,
+        "description": "COG tile size."
+      },
+      "compress": {
+        "type": "string",
+        "default": "DEFLATE",
+        "description": "COG compression method."
+      },
+      "overview_resampling": {
+        "type": "string",
+        "default": "nearest",
+        "description": "COG overview resampling method."
+      },
+      "out_name": {
+        "type": "string",
+        "default": "water_mask_subset.cog.tif",
+        "description": "Output COG filename."
+      },
+      "idx_window": {
+        "type": "string",
+        "default": "0:1024,0:1024",
+        "description": "Optional index window y0:y1,x0:x1 for smoke tests."
+      },
+      "s3_url": {
+        "type": "string",
+        "default": "s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc",
+        "description": "Direct S3 URL for the supplied OPERA DISP-S1 NetCDF granule; bypasses CMR search."
+      }
+    }
+  }
+}

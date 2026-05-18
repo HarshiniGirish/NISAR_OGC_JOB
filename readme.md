@@ -121,6 +121,36 @@ python3 generator/generate_package.py ../OPERA_DPS_JOB/water_mask_to_cog.py \
   --output-dir generated_opera_package
 ```
 
+This repository also includes a local OPERA access example derived from the MAAP
+OPERA Surface Displacement tutorial:
+
+```bash
+python3 generator/generate_package.py input/opera_access_structure.py \
+  --manifest input/app_opera.yaml \
+  --target both \
+  --output-dir generated_opera_package
+```
+
+For a small OPERA smoke test, prefer an index window or direct S3 URL instead of
+a broad collection search:
+
+```bash
+cd generated_opera_package
+./run.sh --idx-window "0:1024,0:1024"
+```
+
+`input/app_opera.yaml` is prefilled with this OPERA DISP-S1 granule:
+
+```text
+OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z
+```
+
+and its direct S3 NetCDF URL:
+
+```text
+s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc
+```
+
 Legacy MAAP `algorithm.yml`/`algorithm_ogc.yml` files are accepted as metadata
 overrides, but a small app-specific `app.yaml` is cleaner when you want exact
 input names and defaults for a new project.
@@ -199,7 +229,7 @@ export EARTHDATA_PASSWORD="your_password"
   --https_href "https://nisar.asf.earthdatacloud.nasa.gov/NISAR/NISAR_L2_GCOV_BETA_V1/NISAR_L2_PR_GCOV_002_109_D_063_4005_DHDH_A_20251012T182508_20251012T182531_X05010_N_P_J_001/NISAR_L2_PR_GCOV_002_109_D_063_4005_DHDH_A_20251012T182508_20251012T182531_X05010_N_P_J_001.h5" \
   --vars "HHHH" \
   --group "/science/LSAR/GCOV/grids/frequencyA" \
-  --bbox "148325,5392805,519115,5759995" \
+  --bbox "148325,5392805,158325,5402805" \
   --bbox_crs "EPSG:32633" \
   --out_name "nisar_subset.zarr"
 ```

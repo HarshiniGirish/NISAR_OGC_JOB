@@ -95,7 +95,7 @@
       "bbox": {
         "type": "string",
         "default": "",
-        "description": "Optional minx,miny,maxx,maxy subset bounding box.",
+        "description": "Optional minx,miny,maxx,maxy subset bounding box. Use a small bbox for notebook smoke tests.",
         "inferred": true,
         "source": "argparse",
         "cli_option": "--bbox"
@@ -115,6 +115,14 @@
         "inferred": true,
         "source": "argparse",
         "cli_option": "--allow_full_granule"
+      },
+      "max_output_cells": {
+        "type": "integer",
+        "default": 2000000,
+        "description": "Maximum output array cells allowed unless allow_full_granule is true.",
+        "inferred": true,
+        "source": "argparse",
+        "cli_option": "--max_output_cells"
       },
       "out_name": {
         "type": "string",
@@ -154,11 +162,11 @@
         },
         {
           "evidence": "s3fs.S3FileSystem",
-          "location": "line 395"
+          "location": "line 422"
         },
         {
           "evidence": "maap.aws.earthdata_s3_credentials",
-          "location": "line 314"
+          "location": "line 341"
         }
       ],
       "stac": [],
@@ -173,7 +181,7 @@
         },
         {
           "evidence": "earthaccess.search_data",
-          "location": "line 179"
+          "location": "line 206"
         }
       ],
       "local": []
