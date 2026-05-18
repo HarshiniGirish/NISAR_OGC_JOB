@@ -127,14 +127,26 @@
           "location": "imports"
         },
         {
+          "evidence": "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials",
+          "location": "line 33"
+        },
+        {
           "evidence": "s3fs.S3FileSystem",
           "location": "line 375"
+        },
+        {
+          "evidence": "maap.aws.earthdata_s3_credentials",
+          "location": "line 294"
         }
       ],
       "stac": [],
       "cmr": [
         {
           "evidence": "import earthaccess",
+          "location": "imports"
+        },
+        {
+          "evidence": "import maap",
           "location": "imports"
         },
         {

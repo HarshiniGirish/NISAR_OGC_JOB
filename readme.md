@@ -1,4 +1,4 @@
-# NISAR DPS / OGC Application Package Generator
+# DPS / OGC Application Package Generator
 
 This repository is a proof of concept for the assessment idea:
 
@@ -9,12 +9,18 @@ The default workflow can run directly from a script/notebook, and it also
 auto-discovers a minimal `input/app.yaml` that declares target intent, schema
 overrides, resources, and base container preference.
 
+`generated_package/` is checked in as a reproducible demo artifact. The point of
+the experiment is the generator in `generator/generate_package.py`: point it at a
+new science script or notebook, optionally provide that job's `app.yaml`, and it
+will emit a first-draft DPS/OGC package plus static-analysis guidance. Do not
+treat the NISAR output as the only supported workload shape.
+
 ## Main demo command
 
 From the repository root:
 
 ```bash
-python generator/generate_package.py
+python3 generator/generate_package.py
 ```
 
 By default this reads:
@@ -74,33 +80,62 @@ Delete and regenerate the package:
 
 ```bash
 rm -rf generated_package
-python generator/generate_package.py
+python3 generator/generate_package.py
 ```
 
 Generate from a different Python file:
 
 ```bash
-python generator/generate_package.py path/to/user_script.py
+python3 generator/generate_package.py path/to/user_script.py --target both --output-dir generated_my_job
 ```
 
 Use an optional manifest override:
 
 ```bash
-python generator/generate_package.py input/nisar_access_subset.py --manifest input/app.yaml
+python3 generator/generate_package.py input/nisar_access_subset.py --manifest input/app.yaml
 ```
 
 Generate from a notebook with Papermill-style parameters:
 
 ```bash
-python generator/generate_package.py path/to/notebook.ipynb --target both
+python3 generator/generate_package.py path/to/notebook.ipynb --target both
 ```
 
-Run the optional LLM-assisted semantic analysis pass when an Anthropic key is
-available:
+Generate from another MAAP-style project, such as the OPERA OGC branch, after
+cloning or downloading it locally:
 
 ```bash
-ANTHROPIC_API_KEY="..." python generator/generate_package.py --llm-analysis
+python3 generator/generate_package.py ../OPERA_DPS_JOB/water_mask_to_cog.py \
+  --manifest ../OPERA_DPS_JOB/algorithm_ogc.yml \
+  --target both \
+  --output-dir generated_opera_package
 ```
+
+Legacy MAAP `algorithm.yml`/`algorithm_ogc.yml` files are accepted as metadata
+overrides, but a small app-specific `app.yaml` is cleaner when you want exact
+input names and defaults for a new project.
+
+Run the optional LLM-assisted semantic analysis pass with ChatGPT/OpenAI:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+python3 generator/generate_package.py --llm-analysis --llm-provider openai
+```
+
+Use a specific OpenAI model if desired:
+
+```bash
+python3 generator/generate_package.py --llm-analysis --llm-provider openai --openai-model gpt-4o-mini
+```
+
+Anthropic/Claude is still supported:
+
+```bash
+ANTHROPIC_API_KEY="..." python3 generator/generate_package.py --llm-analysis --llm-provider anthropic
+```
+
+If you do not want to pay for an API call, skip `--llm-analysis` and paste
+`generated_package/llm_analysis_prompt.json` into ChatGPT manually.
 
 Validate the generated package:
 

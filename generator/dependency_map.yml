@@ -19,14 +19,18 @@ tempfile: null
 time: null
 typing: null
 warnings: null
+xml: null
 
 # External Python packages.
 numpy: numpy
 pandas: pandas
 xarray: xarray
+rioxarray: rioxarray
 zarr: zarr<3
 h5py: h5py
 h5netcdf: h5netcdf
+netCDF4: netcdf4
+scipy: scipy
 fsspec: fsspec
 s3fs: s3fs
 requests: requests
