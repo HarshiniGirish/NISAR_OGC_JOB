@@ -1,0 +1,77 @@
+algorithm_name: opera_water_mask_to_cog
+algorithm_version: ogc
+
+algorithm_description: "Export an OPERA DISP-S1 water_mask subset as a Cloud Optimized GeoTIFF."
+
+code_repository: https://github.com/MAAP-Project/OPERA_DPS_JOB
+
+run_command: OPERA_DPS_JOB/generated_package/run.sh
+build_command: OPERA_DPS_JOB/generated_package/build.sh
+
+ram_min: 16
+cores_min: 2
+
+base_container_url: mas.maap-project.org/root/maap-workspaces/base_images/pangeo:v4.1.1
+
+inputs:
+  - name: short_name
+    label: short_name
+    doc: "CMR short name for OPERA DISP-S1."
+    type: string
+    default: "OPERA_L3_DISP-S1_V1"
+  - name: temporal
+    label: temporal
+    doc: "Optional CMR temporal range."
+    type: string
+    default: "2016-07-01T00:00:00Z,2024-12-31T23:59:59Z"
+  - name: bbox
+    label: bbox
+    doc: "Optional WGS84 bbox minx,miny,maxx,maxy."
+    type: string
+    default: ""
+  - name: limit
+    label: limit
+    doc: "Maximum granules to search."
+    type: integer
+    default: 10
+  - name: granule_ur
+    label: granule_ur
+    doc: "Optional fixed CMR GranuleUR."
+    type: string
+    default: ""
+  - name: tile
+    label: tile
+    doc: "COG tile size."
+    type: integer
+    default: 256
+  - name: compress
+    label: compress
+    doc: "COG compression method."
+    type: string
+    default: "DEFLATE"
+  - name: overview_resampling
+    label: overview_resampling
+    doc: "COG overview resampling method."
+    type: string
+    default: "nearest"
+  - name: out_name
+    label: out_name
+    doc: "Output COG filename."
+    type: string
+    default: "water_mask_subset.cog.tif"
+  - name: idx_window
+    label: idx_window
+    doc: "Optional index window y0:y1,x0:x1 for smoke tests."
+    type: string
+    default: "0:1024,0:1024"
+  - name: s3_url
+    label: s3_url
+    doc: "Optional direct s3:// granule URL to bypass CMR search."
+    type: string
+    default: ""
+
+outputs:
+  - name: out
+    type: Directory
+
+outdir_max: 20

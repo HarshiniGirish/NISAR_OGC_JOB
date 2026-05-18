@@ -29,7 +29,7 @@ DEFAULT_BASE_CONTAINER = "mas.maap-project.org/root/maap-workspaces/custom_image
 DEFAULT_TARGET = "ogc"
 DEFAULT_MANIFEST_NAMES = ("app.yaml", "app.yml")
 TARGET_ALIASES = {"ogc_dps": "both", "ogc-dps": "both"}
-EXCLUDED_RUNTIME_INPUTS = {"out_dir"}
+EXCLUDED_RUNTIME_INPUTS = {"out_dir", "output_dir", "dest", "outdir"}
 PYTHON_SOURCE_SUFFIXES = {".py"}
 NOTEBOOK_SOURCE_SUFFIXES = {".ipynb"}
 EXECUTABLE_SOURCE_SUFFIXES = {".run", ".sh", ".bash", ".zsh"}
@@ -39,7 +39,7 @@ IMPLICIT_DEPENDENCY_RULES = {
     ".rio.to_raster": {"conda": ["rioxarray", "rasterio"], "pip": []},
     "driver=\"COG\"": {"conda": ["rasterio"], "pip": []},
     "driver='COG'": {"conda": ["rasterio"], "pip": []},
-    "open_dataset": {"conda": ["h5netcdf", "netcdf4", "scipy"], "pip": []},
+    "open_dataset": {"conda": ["dask", "h5netcdf", "netcdf4", "scipy"], "pip": []},
     "s3fs": {"conda": ["fsspec", "boto3", "botocore"], "pip": []},
     "earthaccess": {"conda": ["requests"], "pip": []},
     "h5py": {"conda": ["h5netcdf"], "pip": []},

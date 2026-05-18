@@ -26,6 +26,7 @@ numpy: numpy
 pandas: pandas
 xarray: xarray
 rioxarray: rioxarray
+dask: dask
 zarr: zarr<3
 h5py: h5py
 h5netcdf: h5netcdf

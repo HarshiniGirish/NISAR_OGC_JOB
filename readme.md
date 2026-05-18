@@ -121,6 +121,24 @@ python3 generator/generate_package.py ../OPERA_DPS_JOB/water_mask_to_cog.py \
   --output-dir generated_opera_package
 ```
 
+This repository also includes a local OPERA access example derived from the MAAP
+OPERA Surface Displacement tutorial:
+
+```bash
+python3 generator/generate_package.py input/opera_access_structure.py \
+  --manifest input/app_opera.yaml \
+  --target both \
+  --output-dir generated_opera_package
+```
+
+For a small OPERA smoke test, prefer an index window or direct S3 URL instead of
+a broad collection search:
+
+```bash
+cd generated_opera_package
+./run.sh --idx-window "0:1024,0:1024"
+```
+
 Legacy MAAP `algorithm.yml`/`algorithm_ogc.yml` files are accepted as metadata
 overrides, but a small app-specific `app.yaml` is cleaner when you want exact
 input names and defaults for a new project.
