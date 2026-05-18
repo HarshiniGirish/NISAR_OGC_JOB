@@ -46,7 +46,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Relative output directory. The generated run.sh supplies this automatically.",
     )
-    parser.add_argument("--idx-window", default=None, help="Index window 'y0:y1,x0:x1'")
+    parser.add_argument(
+        "--idx-window",
+        default="0:1024,0:1024",
+        help="Index window 'y0:y1,x0:x1'. Defaults to a small smoke-test subset.",
+    )
     parser.add_argument("--s3-url", default=None, help="Direct s3:// path to a .nc granule")
     args, _ = parser.parse_known_args()
 

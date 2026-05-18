@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+*.zarr
+output/
+
+# Generated packages can always be recreated with generator/generate_package.py.
+generated_package/
+generated_*_package/
+generated_mycat_package/
+generated_opera_package/

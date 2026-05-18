@@ -9,11 +9,12 @@ The default workflow can run directly from a script/notebook, and it also
 auto-discovers a minimal `input/app.yaml` that declares target intent, schema
 overrides, resources, and base container preference.
 
-`generated_package/` is checked in as a reproducible demo artifact. The point of
-the experiment is the generator in `generator/generate_package.py`: point it at a
-new science script or notebook, optionally provide that job's `app.yaml`, and it
-will emit a first-draft DPS/OGC package plus static-analysis guidance. Do not
-treat the NISAR output as the only supported workload shape.
+Generated output directories such as `generated_package/`,
+`generated_opera_package/`, and `generated_mycat_package/` are intentionally not
+stored in git. The point of the experiment is the generator in
+`generator/generate_package.py`: point it at a new science script or notebook,
+optionally provide that job's `app.yaml`, and it will emit a first-draft DPS/OGC
+package plus static-analysis guidance.
 
 ## Main demo command
 
@@ -29,7 +30,7 @@ By default this reads:
 input/nisar_access_subset.py
 ```
 
-and regenerates:
+and creates:
 
 ```text
 generated_package/
@@ -139,6 +140,9 @@ cd generated_opera_package
 ./run.sh --idx-window "0:1024,0:1024"
 ```
 
+The OPERA example also defaults `--idx-window` to `0:1024,0:1024`, so plain
+`./run.sh` starts with a small subset unless you override the window.
+
 `input/app_opera.yaml` is prefilled with this OPERA DISP-S1 granule:
 
 ```text
@@ -242,5 +246,5 @@ export EARTHDATA_PASSWORD="your_password"
 - `generator/dependency_map.yml` - import-to-package mapping
 - `generator/DEPENDENCY_MAPPING.md` - human-readable dependency table
 - `templates/` - templates used to render generated package files
-- `generated_package/` - generated OGC/package output
+- `tests/` - generator tests
 
