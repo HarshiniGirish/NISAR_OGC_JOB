@@ -140,6 +140,9 @@ cd generated_opera_package
 ./run.sh --idx-window "0:1024,0:1024"
 ```
 
+The OPERA example also defaults `--idx-window` to `0:1024,0:1024`, so plain
+`./run.sh` starts with a small subset unless you override the window.
+
 `input/app_opera.yaml` is prefilled with this OPERA DISP-S1 granule:
 
 ```text
