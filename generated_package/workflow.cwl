@@ -17,6 +17,7 @@ inputs:
   bbox: string
   bbox_crs: string
   allow_full_granule: boolean
+  max_output_cells: int
   out_name: string
 
 outputs:
@@ -42,6 +43,7 @@ steps:
       bbox: bbox
       bbox_crs: bbox_crs
       allow_full_granule: allow_full_granule
+      max_output_cells: max_output_cells
       out_name: out_name
     out:
       - out

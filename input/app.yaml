@@ -16,11 +16,15 @@ input_schema:
   bbox:
     type: string
     default: ""
-    description: Optional minx,miny,maxx,maxy subset bounding box.
+    description: Optional minx,miny,maxx,maxy subset bounding box. Use a small bbox for notebook smoke tests.
   bbox_crs:
     type: string
     default: ""
     description: CRS for bbox, for example EPSG:32633.
+  max_output_cells:
+    type: integer
+    default: 2000000
+    description: Maximum output array cells allowed unless allow_full_granule is true.
 
 output_schema:
   output:

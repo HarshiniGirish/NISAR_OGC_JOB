@@ -71,7 +71,7 @@ inputs:
     default: "/science/LSAR/GCOV/grids/frequencyA/yCoordinates"
   - name: bbox
     label: bbox
-    doc: "Optional minx,miny,maxx,maxy subset bounding box."
+    doc: "Optional minx,miny,maxx,maxy subset bounding box. Use a small bbox for notebook smoke tests."
     type: string
     default: ""
   - name: bbox_crs
@@ -84,6 +84,11 @@ inputs:
     doc: "Allow writing the full granule. By default the demo requires --bbox to avoid filling small notebook disks."
     type: boolean
     default: false
+  - name: max_output_cells
+    label: max_output_cells
+    doc: "Maximum output array cells allowed unless allow_full_granule is true."
+    type: integer
+    default: 2000000
   - name: out_name
     label: out_name
     doc: ""

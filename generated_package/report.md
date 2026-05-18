@@ -42,9 +42,10 @@
 | `vars` | `string` | `HHHH` |  |
 | `x_path` | `string` | `/science/LSAR/GCOV/grids/frequencyA/xCoordinates` |  |
 | `y_path` | `string` | `/science/LSAR/GCOV/grids/frequencyA/yCoordinates` |  |
-| `bbox` | `string` | `` | Optional minx,miny,maxx,maxy subset bounding box. |
+| `bbox` | `string` | `` | Optional minx,miny,maxx,maxy subset bounding box. Use a small bbox for notebook smoke tests. |
 | `bbox_crs` | `string` | `` | CRS for bbox, for example EPSG:32633. |
 | `allow_full_granule` | `boolean` | `false` | Allow writing the full granule. By default the demo requires --bbox to avoid filling small notebook disks. |
+| `max_output_cells` | `integer` | `2000000` | Maximum output array cells allowed unless allow_full_granule is true. |
 | `out_name` | `string` | `nisar_subset.zarr` |  |
 
 ## Static Analysis
@@ -243,7 +244,7 @@
     "bbox": {
       "type": "string",
       "default": "",
-      "description": "Optional minx,miny,maxx,maxy subset bounding box.",
+      "description": "Optional minx,miny,maxx,maxy subset bounding box. Use a small bbox for notebook smoke tests.",
       "inferred": true,
       "source": "argparse",
       "cli_option": "--bbox"
@@ -263,6 +264,14 @@
       "inferred": true,
       "source": "argparse",
       "cli_option": "--allow_full_granule"
+    },
+    "max_output_cells": {
+      "type": "integer",
+      "default": 2000000,
+      "description": "Maximum output array cells allowed unless allow_full_granule is true.",
+      "inferred": true,
+      "source": "argparse",
+      "cli_option": "--max_output_cells"
     },
     "out_name": {
       "type": "string",
@@ -289,11 +298,11 @@
         },
         {
           "evidence": "s3fs.S3FileSystem",
-          "location": "line 395"
+          "location": "line 422"
         },
         {
           "evidence": "maap.aws.earthdata_s3_credentials",
-          "location": "line 314"
+          "location": "line 341"
         }
       ],
       "stac": [],
@@ -308,7 +317,7 @@
         },
         {
           "evidence": "earthaccess.search_data",
-          "location": "line 179"
+          "location": "line 206"
         }
       ],
       "local": []
