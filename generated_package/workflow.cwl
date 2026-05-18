@@ -16,6 +16,7 @@ inputs:
   y_path: string
   bbox: string
   bbox_crs: string
+  allow_full_granule: boolean
   out_name: string
 
 outputs:
@@ -40,6 +41,7 @@ steps:
       y_path: y_path
       bbox: bbox
       bbox_crs: bbox_crs
+      allow_full_granule: allow_full_granule
       out_name: out_name
     out:
       - out

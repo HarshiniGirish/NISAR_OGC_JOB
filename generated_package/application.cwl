@@ -71,6 +71,11 @@ inputs:
     default: ""
     inputBinding:
       prefix: --bbox_crs
+  allow_full_granule:
+    type: boolean
+    default: false
+    inputBinding:
+      prefix: --allow_full_granule
   out_name:
     type: string
     default: "nisar_subset.zarr"

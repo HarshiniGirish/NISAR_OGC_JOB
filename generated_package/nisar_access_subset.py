@@ -59,6 +59,7 @@ def _normalize_cli_args(argv: List[str]) -> List[str]:
         "--bbox_crs",
         "--out_dir",
         "--out_name",
+        "--allow_full_granule",
     }
 
     normalized: List[str] = []
@@ -92,6 +93,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bbox", default="")
     parser.add_argument("--bbox_crs", default="")
     parser.add_argument(
+        "--allow_full_granule",
+        action="store_true",
+        help=(
+            "Allow writing the full granule. By default the demo requires --bbox "
+            "to avoid filling small notebook disks."
+        ),
+    )
+    parser.add_argument(
         "--out_dir",
         default=os.environ.get("USER_OUTPUT_DIR") or os.environ.get("OUTPUT_DIR") or "output",
     )
@@ -112,6 +121,17 @@ def parse_args() -> argparse.Namespace:
         args.out_name = "nisar_subset.zarr"
 
     return args
+
+
+def require_bbox_or_explicit_full_granule(args: argparse.Namespace, bbox) -> None:
+    if bbox is not None or args.allow_full_granule:
+        return
+
+    raise RuntimeError(
+        "No --bbox was provided. The full NISAR demo granule is large enough to "
+        "fill a small notebook disk. Rerun with a small --bbox and --bbox_crs, "
+        "or pass --allow_full_granule only when you have enough free space."
+    )
 
 
 def _earthaccess_available_noninteractive() -> bool:
@@ -501,6 +521,7 @@ def main() -> None:
         raise ValueError("No variables provided in --vars")
 
     bbox = parse_bbox(args.bbox)
+    require_bbox_or_explicit_full_granule(args, bbox)
     https_href, s3_href = resolve_granule_hrefs(args)
 
     local_path, chosen_mode, chosen_href = open_file_like(
