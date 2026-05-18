@@ -162,6 +162,48 @@ ds.rio.to_raster("output/water_mask_subset.cog.tif", driver="COG")
         self.assertGreaterEqual(len(analysis["data_access"]["cmr"]), 1)
         self.assertGreaterEqual(len(analysis["data_access"]["s3"]), 1)
 
+    def test_argparse_cli_option_and_output_argument_are_preserved(self) -> None:
+        source_info = {
+            "kind": "script",
+            "source": """
+import argparse
+p = argparse.ArgumentParser()
+p.add_argument("--short-name", default="OPERA_L3_DISP-S1_V1")
+p.add_argument("--dest", default="output")
+""",
+            "code_units": [],
+            "parameters_cell_index": None,
+            "magic_lines": [],
+        }
+
+        inputs = gen.infer_inputs(source_info)
+        runtime = gen.infer_runtime_config(source_info)
+        cwl = gen.build_cwl_inputs_block(inputs)
+        commands = gen.build_run_commands(runtime, "algorithm.py")
+
+        self.assertEqual(inputs["short_name"]["cli_option"], "--short-name")
+        self.assertEqual(runtime["output_argument"], "--dest")
+        self.assertIn("prefix: --short-name", cwl)
+        self.assertIn('--dest "${OUTDIR}"', commands["local"])
+
+    def test_executable_run_script_source_is_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_path = Path(tmpdir) / "MyCatODT.run"
+            run_path.write_text(
+                "#!/usr/bin/env bash\nread -p 'bbox?' bbox\necho s3://bucket/input.nc\n",
+                encoding="utf-8",
+            )
+            source_info = gen.read_source_file(run_path)
+
+        analysis = gen.analyze_source(source_info, [], {})
+        rules = {item["rule"] for item in analysis["issues"]}
+        commands = gen.build_run_commands(gen.infer_runtime_config(source_info), "MyCatODT.run")
+
+        self.assertEqual(source_info["kind"], "executable")
+        self.assertIn("interactive_runtime", rules)
+        self.assertIn("s3", analysis["data_access"])
+        self.assertIn('bash "${basedir}/MyCatODT.run"', commands["local"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,8 @@ The generator can run without an `app.yaml` manifest, or it can merge a minimal 
 
 `nisar_access_subset.py`
 
+Runtime type: `python`.
+
 ## Generated files
 
 - `Dockerfile`

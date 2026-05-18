@@ -30,6 +30,10 @@ DEFAULT_TARGET = "ogc"
 DEFAULT_MANIFEST_NAMES = ("app.yaml", "app.yml")
 TARGET_ALIASES = {"ogc_dps": "both", "ogc-dps": "both"}
 EXCLUDED_RUNTIME_INPUTS = {"out_dir"}
+PYTHON_SOURCE_SUFFIXES = {".py"}
+NOTEBOOK_SOURCE_SUFFIXES = {".ipynb"}
+EXECUTABLE_SOURCE_SUFFIXES = {".run", ".sh", ".bash", ".zsh"}
+OUTPUT_ARGUMENT_NAMES = {"out_dir", "output_dir", "output", "dest", "outdir"}
 IMPLICIT_DEPENDENCY_RULES = {
     ".to_zarr": {"conda": ["zarr<3", "numcodecs<0.16"], "pip": []},
     ".rio.to_raster": {"conda": ["rioxarray", "rasterio"], "pip": []},
@@ -172,6 +176,7 @@ def normalize_io_list(items: list[Any]) -> dict[str, Any]:
             "type": item.get("type", "string"),
             "default": item.get("default", ""),
             "description": item.get("description") or item.get("doc", ""),
+            "cli_option": item.get("cli_option", ""),
         }
     return normalized
 
@@ -267,6 +272,21 @@ def infer_type_from_value(value: Any) -> str:
     return "string"
 
 
+def source_kind_for_path(source_path: Path) -> str:
+    suffix = source_path.suffix.lower()
+    if suffix in NOTEBOOK_SOURCE_SUFFIXES:
+        return "notebook"
+    if suffix in PYTHON_SOURCE_SUFFIXES:
+        return "script"
+    if suffix in EXECUTABLE_SOURCE_SUFFIXES:
+        return "executable"
+    return "script"
+
+
+def is_python_source(source_info: dict[str, Any]) -> bool:
+    return source_info.get("kind") in {"script", "notebook"}
+
+
 def normalize_notebook_code(source: str) -> tuple[str, list[dict[str, Any]]]:
     normalized_lines = []
     magic_lines = []
@@ -314,10 +334,11 @@ def is_probable_parameter_cell(source: str) -> bool:
 
 
 def read_source_file(source_path: Path) -> dict[str, Any]:
-    if source_path.suffix.lower() != ".ipynb":
+    source_kind = source_kind_for_path(source_path)
+    if source_kind != "notebook":
         source = source_path.read_text(encoding="utf-8")
         return {
-            "kind": "script",
+            "kind": source_kind,
             "path": source_path,
             "source": source,
             "raw_source": source,
@@ -383,6 +404,8 @@ def materialize_entrypoint(source_info: dict[str, Any], destination: Path) -> No
         write_text(destination, source_info["source"])
     else:
         shutil.copy2(source_info["path"], destination)
+    if source_info["kind"] == "executable":
+        make_executable(destination)
 
 
 def infer_repository_url() -> str:
@@ -478,7 +501,10 @@ def stringify_default(value: Any) -> str:
 
 
 def infer_argparse_inputs_from_source(source: str) -> dict[str, dict[str, Any]]:
-    tree = ast.parse(source)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {}
     constants = collect_module_constants(tree)
     inputs: dict[str, dict[str, Any]] = {}
 
@@ -498,7 +524,8 @@ def infer_argparse_inputs_from_source(source: str) -> dict[str, dict[str, Any]]:
         if not option_names:
             continue
 
-        name = option_names[0].lstrip("-").replace("-", "_")
+        cli_option = option_names[0]
+        name = cli_option.lstrip("-").replace("-", "_")
         if name in EXCLUDED_RUNTIME_INPUTS:
             continue
 
@@ -522,6 +549,7 @@ def infer_argparse_inputs_from_source(source: str) -> dict[str, dict[str, Any]]:
             "description": str(description),
             "inferred": True,
             "source": "argparse",
+            "cli_option": cli_option,
         }
 
     return inputs
@@ -572,7 +600,16 @@ def infer_papermill_inputs(parameters_source: str) -> dict[str, dict[str, Any]]:
 
 
 def infer_description_from_source(source: str, source_path: Path) -> str:
-    module = ast.parse(source)
+    try:
+        module = ast.parse(source)
+    except SyntaxError:
+        for line in source.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                description = stripped.lstrip("#").strip()
+                if description and not description.startswith("!"):
+                    return description
+        return f"Application package generated from {source_path.name}."
     docstring = ast.get_docstring(module)
     if not docstring:
         return f"Application package generated from {source_path.name}."
@@ -585,9 +622,48 @@ def infer_description(script_path: Path) -> str:
 
 
 def infer_inputs(source_info: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    if not is_python_source(source_info):
+        return {}
     inputs = infer_papermill_inputs(source_info.get("parameters_source", ""))
     inputs.update(infer_argparse_inputs_from_source(source_info["source"]))
     return inputs
+
+
+def infer_runtime_config(source_info: dict[str, Any]) -> dict[str, str]:
+    runtime_type = "python" if is_python_source(source_info) else "executable"
+    output_argument = ""
+
+    if is_python_source(source_info):
+        try:
+            tree = ast.parse(source_info["source"])
+        except SyntaxError:
+            tree = None
+
+        if tree is not None:
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if not isinstance(node.func, ast.Attribute) or node.func.attr != "add_argument":
+                    continue
+                option_names = [
+                    arg.value
+                    for arg in node.args
+                    if isinstance(arg, ast.Constant)
+                    and isinstance(arg.value, str)
+                    and arg.value.startswith("--")
+                ]
+                for option_name in option_names:
+                    normalized = option_name.lstrip("-").replace("-", "_")
+                    if normalized in OUTPUT_ARGUMENT_NAMES:
+                        output_argument = option_name
+                        break
+                if output_argument:
+                    break
+
+    return {
+        "type": runtime_type,
+        "output_argument": output_argument,
+    }
 
 
 def infer_app_config(source_path: Path, source_info: dict[str, Any], target: str) -> dict[str, Any]:
@@ -602,6 +678,7 @@ def infer_app_config(source_path: Path, source_info: dict[str, Any], target: str
         "description": infer_description_from_source(source_info["source"], source_path),
         "repository_url": infer_repository_url(),
         "base_container": DEFAULT_BASE_CONTAINER,
+        "runtime": infer_runtime_config(source_info),
         "resources": {
             "ram_min": 8,
             "cores_min": 2,
@@ -630,7 +707,10 @@ def infer_app_config(source_path: Path, source_info: dict[str, Any], target: str
 
 
 def detect_imports_from_source(source: str) -> list[str]:
-    tree = ast.parse(source)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
 
     imports = set()
 
@@ -816,7 +896,7 @@ def build_cwl_inputs_block(inputs: dict[str, Any]) -> str:
         lines.append(f"    type: {cwl_type}")
         lines.append(f"    default: {format_yaml_default(default, input_type)}")
         lines.append("    inputBinding:")
-        lines.append(f"      prefix: --{name}")
+        lines.append(f"      prefix: {config.get('cli_option') or '--' + name}")
 
     return "\n".join(lines) if lines else "  {}"
 
@@ -878,6 +958,34 @@ def build_stac_output_manifest(app_config: dict[str, Any], outputs: dict[str, An
         },
     }
     return json.dumps(manifest, indent=2) + "\n"
+
+
+def build_runtime_output_arg(output_argument: str) -> str:
+    if not output_argument:
+        return ""
+    return f' {output_argument} "${{OUTDIR}}"'
+
+
+def build_run_commands(runtime_config: dict[str, Any], entrypoint: str) -> dict[str, str]:
+    output_arg = build_runtime_output_arg(str(runtime_config.get("output_argument", "")))
+    runtime_type = runtime_config.get("type", "python")
+
+    if runtime_type == "executable":
+        return {
+            "conda": (
+                f'  conda run --live-stream -p "${{ENV_PREFIX}}" '
+                f'bash "${{basedir}}/{entrypoint}"{output_arg} "$@"'
+            ),
+            "local": f'  bash "${{basedir}}/{entrypoint}"{output_arg} "$@"',
+        }
+
+    return {
+        "conda": (
+            f'  conda run --live-stream -p "${{ENV_PREFIX}}" \\\n'
+            f'    python "${{basedir}}/{entrypoint}"{output_arg} "$@"'
+        ),
+        "local": f'  "${{PYTHON_BIN}}" "${{basedir}}/{entrypoint}"{output_arg} "$@"',
+    }
 
 
 def build_llm_prompt(app_config: dict[str, Any], analysis: dict[str, Any]) -> str:
@@ -1292,6 +1400,44 @@ def analyze_source(source_info: dict[str, Any], detected_imports: list[str], inp
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
+        if source_info.get("kind") == "executable":
+            for lineno, line in enumerate(source.splitlines(), start=1):
+                location = f"line {lineno}"
+                for value in re.findall(r"""(?:s3://|https?://|/|\./|\.\./)[^\s"']+""", line):
+                    value = value.rstrip("),;")
+                    access_type = classify_data_reference(value)
+                    if access_type:
+                        add_data_access(data_access, access_type, value, location)
+                    elif looks_like_local_file_path(value):
+                        add_data_access(data_access, "local", value, location)
+                if re.search(r"\bread\s+-p\b|\bselect\b", line):
+                    issues.append(
+                        issue(
+                            "interactive_runtime",
+                            "error",
+                            "Shell entrypoint appears to prompt interactively.",
+                            "Replace prompts with declared app.yaml inputs or environment variables.",
+                            location,
+                        )
+                    )
+            if not inputs:
+                issues.append(
+                    issue(
+                        "missing_declared_parameters",
+                        "info",
+                        "No app inputs were inferred or declared for this executable entrypoint.",
+                        "Declare executable inputs in app.yaml so CWL/DPS metadata can be generated.",
+                    )
+                )
+            return {
+                "source_kind": source_info["kind"],
+                "code_cell_count": len(source_info.get("code_units", [])),
+                "parameters_cell_index": source_info.get("parameters_cell_index"),
+                "data_access": data_access,
+                "issues": issues,
+                "parse_errors": [],
+                "lint_tools": lint_tool_summary(source_info),
+            }
         return {
             "source_kind": source_info["kind"],
             "code_cell_count": len(source_info.get("code_units", [])),
@@ -1531,6 +1677,7 @@ def build_build_script(
     entrypoint: str,
     detected_imports: list[str],
     dependency_map: dict[str, Any],
+    runtime_config: dict[str, Any],
 ) -> str:
     validation_imports = [
         module_name
@@ -1538,6 +1685,14 @@ def build_build_script(
         if dependency_map.get(module_name) is not None
     ]
     validation_import_block = "\n".join(f"import {module_name}" for module_name in validation_imports)
+    if runtime_config.get("type") == "executable":
+        conda_entrypoint_validation = f'  chmod +x "${{basedir}}/{entrypoint}"'
+        local_entrypoint_validation = f'  chmod +x "${{basedir}}/{entrypoint}"'
+    else:
+        conda_entrypoint_validation = (
+            f'  conda run -p "${{ENV_PREFIX}}" python -m py_compile "${{basedir}}/{entrypoint}"'
+        )
+        local_entrypoint_validation = f'  "${{PYTHON_BIN}}" -m py_compile "${{basedir}}/{entrypoint}"'
 
     return f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -1565,7 +1720,7 @@ if command -v conda >/dev/null 2>&1; then
   conda env remove -p "${{ENV_PREFIX}}" -y || true
   conda env create -f "${{basedir}}/env.yml" --prefix "${{ENV_PREFIX}}"
   conda clean -afy
-  conda run -p "${{ENV_PREFIX}}" python -m py_compile "${{basedir}}/{entrypoint}"
+{conda_entrypoint_validation}
   conda run -p "${{ENV_PREFIX}}" python - <<'PY'
 {validation_import_block}
 print("Environment validation successful.")
@@ -1576,7 +1731,7 @@ else
     PYTHON_BIN="python"
   fi
   "${{PYTHON_BIN}}" -m pip install -r "${{basedir}}/requirements.txt"
-  "${{PYTHON_BIN}}" -m py_compile "${{basedir}}/{entrypoint}"
+{local_entrypoint_validation}
 fi
 """
 
@@ -1596,6 +1751,7 @@ def build_report(
         "version": app_config.get("version"),
         "target": app_config.get("target"),
         "entrypoint": app_config.get("entrypoint"),
+        "runtime": app_config.get("runtime", {}),
         "inference": app_config.get("inference", {}),
         "detected_imports": detected_imports,
         "inferred_inputs": inferred_inputs,
@@ -1620,6 +1776,7 @@ def build_report(
         f"- Version: `{app_config.get('version')}`",
         f"- Target: `{app_config.get('target')}`",
         f"- Entrypoint: `{app_config.get('entrypoint')}`",
+        f"- Runtime: `{app_config.get('runtime', {}).get('type', 'python')}`",
         f"- Generation mode: `{app_config.get('inference', {}).get('mode', 'manifest')}`",
         f"- Manifest required: `{app_config.get('inference', {}).get('manifest_required', True)}`",
         "",
@@ -1826,6 +1983,8 @@ def main() -> None:
     inputs = app_config.get("inputs", {})
     outputs = app_config.get("outputs", {})
     resources = app_config.get("resources", {})
+    runtime_config = app_config.get("runtime", infer_runtime_config(source_info))
+    run_commands = build_run_commands(runtime_config, entrypoint)
 
     output_config = outputs.get("output", {})
     output_description = output_config.get("description", "Generated output directory.")
@@ -1872,6 +2031,8 @@ def main() -> None:
         "cwl_workflow_inputs_block": build_cwl_workflow_inputs_block(inputs),
         "cwl_workflow_step_inputs_block": build_cwl_workflow_step_inputs_block(inputs),
         "cwl_file_name": cwl_file_name,
+        "conda_run_command": run_commands["conda"],
+        "local_run_command": run_commands["local"],
         "ram_min": str(resources.get("ram_min", 8)),
         "cores_min": str(resources.get("cores_min", 2)),
         "outdir_max": str(resources.get("outdir_max", 20)),
@@ -1906,7 +2067,7 @@ def main() -> None:
         write_text(output_path, rendered)
         generated_files.append(output_name)
 
-    build_sh = build_build_script(name, entrypoint, detected_imports, dependency_map)
+    build_sh = build_build_script(name, entrypoint, detected_imports, dependency_map, runtime_config)
 
     write_text(output_dir / "build.sh", build_sh)
     make_executable(output_dir / "build.sh")
@@ -1952,6 +2113,8 @@ The generator can run without an `app.yaml` manifest, or it can merge a minimal 
 ## Entrypoint
 
 `{entrypoint}`
+
+Runtime type: `{runtime_config.get('type', 'python')}`.
 
 ## Generated files
 

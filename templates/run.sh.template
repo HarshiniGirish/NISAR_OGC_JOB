@@ -29,10 +29,9 @@ fi
 mkdir -p "${OUTDIR}"
 
 if command -v conda >/dev/null 2>&1 && [ -d "${ENV_PREFIX}" ]; then
-  conda run --live-stream -p "${ENV_PREFIX}" \
-    python "${basedir}/{{ entrypoint }}" --out_dir "${OUTDIR}" "$@"
+{{ conda_run_command }}
 else
-  "${PYTHON_BIN}" "${basedir}/{{ entrypoint }}" --out_dir "${OUTDIR}" "$@"
+{{ local_run_command }}
 fi
 
 echo "Finished {{ name }}"

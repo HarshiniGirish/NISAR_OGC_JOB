@@ -89,6 +89,16 @@ Generate from a different Python file:
 python3 generator/generate_package.py path/to/user_script.py --target both --output-dir generated_my_job
 ```
 
+Generate from an executable shell/`.run` entrypoint. For non-Python entrypoints,
+declare inputs in `app.yaml` because argparse inference is not available:
+
+```bash
+python3 generator/generate_package.py path/to/MyCatODT.run \
+  --manifest path/to/app.yaml \
+  --target both \
+  --output-dir generated_mycat_package
+```
+
 Use an optional manifest override:
 
 ```bash
@@ -114,6 +124,13 @@ python3 generator/generate_package.py ../OPERA_DPS_JOB/water_mask_to_cog.py \
 Legacy MAAP `algorithm.yml`/`algorithm_ogc.yml` files are accepted as metadata
 overrides, but a small app-specific `app.yaml` is cleaner when you want exact
 input names and defaults for a new project.
+
+The generator preserves argparse's real CLI options in CWL bindings. For
+example, a Python option declared as `--short-name` remains `--short-name`
+instead of being rewritten to `--short_name`. It also detects common output
+arguments such as `--out_dir`, `--output-dir`, and `--dest` so `run.sh` can pass
+the package output directory without assuming every algorithm has the same
+interface.
 
 Run the optional LLM-assisted semantic analysis pass with ChatGPT/OpenAI:
 
