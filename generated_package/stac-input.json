@@ -1,0 +1,81 @@
+{
+  "type": "FeatureCollection",
+  "features": [],
+  "links": [],
+  "metadata": {
+    "application": "nisar_access_subset",
+    "role": "sample-input-manifest",
+    "input_schema": {
+      "access_mode": {
+        "type": "string",
+        "default": "auto",
+        "description": "Prefer s3 in DPS, or https when non-interactive Earthdata credentials are available."
+      },
+      "https_href": {
+        "type": "string",
+        "default": "",
+        "description": ""
+      },
+      "s3_href": {
+        "type": "string",
+        "default": "",
+        "description": ""
+      },
+      "short_name": {
+        "type": "string",
+        "default": "NISAR_L2_GCOV_BETA_V1",
+        "description": ""
+      },
+      "count": {
+        "type": "integer",
+        "default": "10",
+        "description": ""
+      },
+      "granule_index": {
+        "type": "integer",
+        "default": "0",
+        "description": ""
+      },
+      "asf_s3_creds_url": {
+        "type": "string",
+        "default": "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials",
+        "description": ""
+      },
+      "group": {
+        "type": "string",
+        "default": "/science/LSAR/GCOV/grids/frequencyA",
+        "description": ""
+      },
+      "vars": {
+        "type": "string",
+        "default": "HHHH",
+        "description": ""
+      },
+      "x_path": {
+        "type": "string",
+        "default": "/science/LSAR/GCOV/grids/frequencyA/xCoordinates",
+        "description": ""
+      },
+      "y_path": {
+        "type": "string",
+        "default": "/science/LSAR/GCOV/grids/frequencyA/yCoordinates",
+        "description": ""
+      },
+      "bbox": {
+        "type": "string",
+        "default": "",
+        "description": "Optional minx,miny,maxx,maxy subset bounding box."
+      },
+      "bbox_crs": {
+        "type": "string",
+        "default": "",
+        "description": "CRS for bbox, for example EPSG:32633."
+      },
+      "out_name": {
+        "type": "string",
+        "default": "nisar_subset.zarr",
+        "description": ""
+      }
+    }
+  }
+}

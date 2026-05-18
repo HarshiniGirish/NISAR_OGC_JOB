@@ -36,6 +36,10 @@ import xarray
 print("Environment validation successful.")
 PY
 else
-  python -m pip install -r "${basedir}/requirements.txt"
-  python -m py_compile "${basedir}/nisar_access_subset.py"
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
+  if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  fi
+  "${PYTHON_BIN}" -m pip install -r "${basedir}/requirements.txt"
+  "${PYTHON_BIN}" -m py_compile "${basedir}/nisar_access_subset.py"
 fi

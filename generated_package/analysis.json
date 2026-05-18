@@ -1,0 +1,40 @@
+{
+  "source_kind": "script",
+  "code_cell_count": 1,
+  "parameters_cell_index": null,
+  "data_access": {
+    "s3": [
+      {
+        "evidence": "import s3fs",
+        "location": "imports"
+      },
+      {
+        "evidence": "s3fs.S3FileSystem",
+        "location": "line 375"
+      }
+    ],
+    "stac": [],
+    "cmr": [
+      {
+        "evidence": "import earthaccess",
+        "location": "imports"
+      },
+      {
+        "evidence": "earthaccess.search_data",
+        "location": "line 159"
+      }
+    ],
+    "local": []
+  },
+  "issues": [],
+  "parse_errors": [],
+  "lint_tools": {
+    "executed": [],
+    "recommended": [
+      "ruff",
+      "flake8",
+      "mypy"
+    ],
+    "note": "Install these tools in CI to enforce the same reproducibility checks automatically."
+  }
+}

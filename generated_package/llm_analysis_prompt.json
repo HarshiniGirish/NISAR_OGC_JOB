@@ -1,0 +1,164 @@
+{
+  "task": "Review this generated MAAP DPS / OGC Application Package analysis. Identify semantic reproducibility or scaling risks that rule-based linters may miss, especially hidden cell-order dependencies and undeclared environment state.",
+  "app": {
+    "name": "nisar_access_subset",
+    "target": "both",
+    "inputs": {
+      "access_mode": {
+        "type": "string",
+        "default": "auto",
+        "description": "Prefer s3 in DPS, or https when non-interactive Earthdata credentials are available.",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "https_href": {
+        "type": "string",
+        "default": "",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "s3_href": {
+        "type": "string",
+        "default": "",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "short_name": {
+        "type": "string",
+        "default": "NISAR_L2_GCOV_BETA_V1",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "count": {
+        "type": "integer",
+        "default": "10",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "granule_index": {
+        "type": "integer",
+        "default": "0",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "asf_s3_creds_url": {
+        "type": "string",
+        "default": "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "group": {
+        "type": "string",
+        "default": "/science/LSAR/GCOV/grids/frequencyA",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "vars": {
+        "type": "string",
+        "default": "HHHH",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "x_path": {
+        "type": "string",
+        "default": "/science/LSAR/GCOV/grids/frequencyA/xCoordinates",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "y_path": {
+        "type": "string",
+        "default": "/science/LSAR/GCOV/grids/frequencyA/yCoordinates",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "bbox": {
+        "type": "string",
+        "default": "",
+        "description": "Optional minx,miny,maxx,maxy subset bounding box.",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "bbox_crs": {
+        "type": "string",
+        "default": "",
+        "description": "CRS for bbox, for example EPSG:32633.",
+        "inferred": true,
+        "source": "argparse"
+      },
+      "out_name": {
+        "type": "string",
+        "default": "nisar_subset.zarr",
+        "description": "",
+        "inferred": true,
+        "source": "argparse"
+      }
+    },
+    "outputs": {
+      "output": {
+        "type": "directory",
+        "path": "output",
+        "description": "Output directory containing the generated Zarr store and manifest.json."
+      }
+    },
+    "resources": {
+      "ram_min": 8,
+      "cores_min": 2,
+      "outdir_max": 20
+    }
+  },
+  "static_analysis": {
+    "source_kind": "script",
+    "code_cell_count": 1,
+    "parameters_cell_index": null,
+    "data_access": {
+      "s3": [
+        {
+          "evidence": "import s3fs",
+          "location": "imports"
+        },
+        {
+          "evidence": "s3fs.S3FileSystem",
+          "location": "line 375"
+        }
+      ],
+      "stac": [],
+      "cmr": [
+        {
+          "evidence": "import earthaccess",
+          "location": "imports"
+        },
+        {
+          "evidence": "earthaccess.search_data",
+          "location": "line 159"
+        }
+      ],
+      "local": []
+    },
+    "issues": [],
+    "parse_errors": [],
+    "lint_tools": {
+      "executed": [],
+      "recommended": [
+        "ruff",
+        "flake8",
+        "mypy"
+      ],
+      "note": "Install these tools in CI to enforce the same reproducibility checks automatically."
+    }
+  },
+  "response_format": [
+    "List blocking issues first.",
+    "For each issue, include remediation that can be applied before registration.",
+    "If no blocking issues are found, say what residual risks remain."
+  ]
+}

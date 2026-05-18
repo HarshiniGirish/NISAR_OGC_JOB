@@ -1,0 +1,29 @@
+target: both
+name: nisar_access_subset
+version: main
+base_container_preference: mas.maap-project.org/root/maap-workspaces/custom_images/maap_base:v5.0.0
+
+resources:
+  ram_min: 8
+  cores_min: 2
+  outdir_max: 20
+
+input_schema:
+  access_mode:
+    type: string
+    default: auto
+    description: Prefer s3 in DPS, or https when non-interactive Earthdata credentials are available.
+  bbox:
+    type: string
+    default: ""
+    description: Optional minx,miny,maxx,maxy subset bounding box.
+  bbox_crs:
+    type: string
+    default: ""
+    description: CRS for bbox, for example EPSG:32633.
+
+output_schema:
+  output:
+    type: directory
+    path: output
+    description: Output directory containing the generated Zarr store and manifest.json.

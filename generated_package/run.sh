@@ -21,6 +21,10 @@ determine_env_prefix() {
 }
 
 ENV_PREFIX="$(determine_env_prefix)"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+fi
 
 mkdir -p "${OUTDIR}"
 
@@ -28,7 +32,7 @@ if command -v conda >/dev/null 2>&1 && [ -d "${ENV_PREFIX}" ]; then
   conda run --live-stream -p "${ENV_PREFIX}" \
     python "${basedir}/nisar_access_subset.py" --out_dir "${OUTDIR}" "$@"
 else
-  python "${basedir}/nisar_access_subset.py" --out_dir "${OUTDIR}" "$@"
+  "${PYTHON_BIN}" "${basedir}/nisar_access_subset.py" --out_dir "${OUTDIR}" "$@"
 fi
 
 echo "Finished nisar_access_subset"

@@ -1,0 +1,19 @@
+cwlVersion: v1.2
+class: Workflow
+label: {{ name }} workflow
+
+inputs:
+{{ cwl_workflow_inputs_block }}
+
+outputs:
+  out:
+    type: Directory
+    outputSource: run_app/out
+
+steps:
+  run_app:
+    run: {{ cwl_file_name }}
+    in:
+{{ cwl_workflow_step_inputs_block }}
+    out:
+      - out
