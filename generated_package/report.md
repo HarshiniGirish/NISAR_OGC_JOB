@@ -6,6 +6,7 @@
 - Version: `main`
 - Target: `both`
 - Entrypoint: `nisar_access_subset.py`
+- Runtime: `python`
 - Generation mode: `python_only`
 - Manifest required: `False`
 
@@ -121,6 +122,10 @@
   "version": "main",
   "target": "both",
   "entrypoint": "nisar_access_subset.py",
+  "runtime": {
+    "type": "python",
+    "output_argument": "--out_dir"
+  },
   "inference": {
     "mode": "python_only",
     "source": "input/nisar_access_subset.py",
@@ -151,98 +156,112 @@
       "default": "auto",
       "description": "Prefer s3 in DPS, or https when non-interactive Earthdata credentials are available.",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--access_mode"
     },
     "https_href": {
       "type": "string",
       "default": "",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--https_href"
     },
     "s3_href": {
       "type": "string",
       "default": "",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--s3_href"
     },
     "short_name": {
       "type": "string",
       "default": "NISAR_L2_GCOV_BETA_V1",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--short_name"
     },
     "count": {
       "type": "integer",
       "default": "10",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--count"
     },
     "granule_index": {
       "type": "integer",
       "default": "0",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--granule_index"
     },
     "asf_s3_creds_url": {
       "type": "string",
       "default": "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--asf_s3_creds_url"
     },
     "group": {
       "type": "string",
       "default": "/science/LSAR/GCOV/grids/frequencyA",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--group"
     },
     "vars": {
       "type": "string",
       "default": "HHHH",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--vars"
     },
     "x_path": {
       "type": "string",
       "default": "/science/LSAR/GCOV/grids/frequencyA/xCoordinates",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--x_path"
     },
     "y_path": {
       "type": "string",
       "default": "/science/LSAR/GCOV/grids/frequencyA/yCoordinates",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--y_path"
     },
     "bbox": {
       "type": "string",
       "default": "",
       "description": "Optional minx,miny,maxx,maxy subset bounding box.",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--bbox"
     },
     "bbox_crs": {
       "type": "string",
       "default": "",
       "description": "CRS for bbox, for example EPSG:32633.",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--bbox_crs"
     },
     "out_name": {
       "type": "string",
       "default": "nisar_subset.zarr",
       "description": "",
       "inferred": true,
-      "source": "argparse"
+      "source": "argparse",
+      "cli_option": "--out_name"
     }
   },
   "analysis": {
