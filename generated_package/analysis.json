@@ -14,11 +14,11 @@
       },
       {
         "evidence": "s3fs.S3FileSystem",
-        "location": "line 375"
+        "location": "line 395"
       },
       {
         "evidence": "maap.aws.earthdata_s3_credentials",
-        "location": "line 294"
+        "location": "line 314"
       }
     ],
     "stac": [],
@@ -33,7 +33,7 @@
       },
       {
         "evidence": "earthaccess.search_data",
-        "location": "line 159"
+        "location": "line 179"
       }
     ],
     "local": []

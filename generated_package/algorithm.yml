@@ -79,6 +79,11 @@ inputs:
     doc: "CRS for bbox, for example EPSG:32633."
     type: string
     default: ""
+  - name: allow_full_granule
+    label: allow_full_granule
+    doc: "Allow writing the full granule. By default the demo requires --bbox to avoid filling small notebook disks."
+    type: boolean
+    default: false
   - name: out_name
     label: out_name
     doc: ""

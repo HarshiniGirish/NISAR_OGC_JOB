@@ -44,6 +44,7 @@
 | `y_path` | `string` | `/science/LSAR/GCOV/grids/frequencyA/yCoordinates` |  |
 | `bbox` | `string` | `` | Optional minx,miny,maxx,maxy subset bounding box. |
 | `bbox_crs` | `string` | `` | CRS for bbox, for example EPSG:32633. |
+| `allow_full_granule` | `boolean` | `false` | Allow writing the full granule. By default the demo requires --bbox to avoid filling small notebook disks. |
 | `out_name` | `string` | `nisar_subset.zarr` |  |
 
 ## Static Analysis
@@ -255,6 +256,14 @@
       "source": "argparse",
       "cli_option": "--bbox_crs"
     },
+    "allow_full_granule": {
+      "type": "boolean",
+      "default": "false",
+      "description": "Allow writing the full granule. By default the demo requires --bbox to avoid filling small notebook disks.",
+      "inferred": true,
+      "source": "argparse",
+      "cli_option": "--allow_full_granule"
+    },
     "out_name": {
       "type": "string",
       "default": "nisar_subset.zarr",
@@ -280,11 +289,11 @@
         },
         {
           "evidence": "s3fs.S3FileSystem",
-          "location": "line 375"
+          "location": "line 395"
         },
         {
           "evidence": "maap.aws.earthdata_s3_credentials",
-          "location": "line 294"
+          "location": "line 314"
         }
       ],
       "stac": [],
@@ -299,7 +308,7 @@
         },
         {
           "evidence": "earthaccess.search_data",
-          "location": "line 159"
+          "location": "line 179"
         }
       ],
       "local": []

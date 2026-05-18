@@ -71,6 +71,11 @@
         "default": "",
         "description": "CRS for bbox, for example EPSG:32633."
       },
+      "allow_full_granule": {
+        "type": "boolean",
+        "default": "false",
+        "description": "Allow writing the full granule. By default the demo requires --bbox to avoid filling small notebook disks."
+      },
       "out_name": {
         "type": "string",
         "default": "nisar_subset.zarr",
