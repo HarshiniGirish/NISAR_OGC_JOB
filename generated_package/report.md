@@ -50,15 +50,15 @@
 - Findings: none
 - Source kind: `script` with `1` code unit(s)
 - Data access:
-  - `s3`: 2 signal(s)
+  - `s3`: 4 signal(s)
   - `stac`: 0 signal(s)
-  - `cmr`: 2 signal(s)
+  - `cmr`: 3 signal(s)
   - `local`: 0 signal(s)
 
 ## LLM-Assisted Analysis
 
 - Status: `not_requested`
-- Message: Pass --llm-analysis and set ANTHROPIC_API_KEY to run the optional semantic analysis pass.
+- Message: Pass --llm-analysis with OPENAI_API_KEY or ANTHROPIC_API_KEY to run the optional semantic analysis pass. The prompt is saved for manual ChatGPT review.
 
 ## Implicit Dependencies
 
@@ -256,14 +256,26 @@
           "location": "imports"
         },
         {
+          "evidence": "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials",
+          "location": "line 33"
+        },
+        {
           "evidence": "s3fs.S3FileSystem",
           "location": "line 375"
+        },
+        {
+          "evidence": "maap.aws.earthdata_s3_credentials",
+          "location": "line 294"
         }
       ],
       "stac": [],
       "cmr": [
         {
           "evidence": "import earthaccess",
+          "location": "imports"
+        },
+        {
+          "evidence": "import maap",
           "location": "imports"
         },
         {
@@ -287,7 +299,7 @@
   },
   "llm_analysis": {
     "status": "not_requested",
-    "message": "Pass --llm-analysis and set ANTHROPIC_API_KEY to run the optional semantic analysis pass."
+    "message": "Pass --llm-analysis with OPENAI_API_KEY or ANTHROPIC_API_KEY to run the optional semantic analysis pass. The prompt is saved for manual ChatGPT review."
   },
   "implicit_dependencies": {
     "conda": [

@@ -30,11 +30,17 @@ user-writable path:
 
 `$HOME/.conda/envs/nisar_access_subset`
 
-## NISAR demo tip
+## Runtime tip
 
-For a quick ADE/Jupyter smoke test, pass a small `--bbox` and `--bbox_crs`.
-Running without a bbox can try to write the full granule and may be slow or
-memory-heavy.
+For remote sensing jobs, use the smallest representative input for a first
+smoke test. If the generated CLI exposes a bbox, index-window, limit, or direct
+granule/S3 URL parameter, prefer that over a full collection search.
+
+## Optional LLM review
+
+This package includes `llm_analysis_prompt.json`. You can paste it into ChatGPT
+manually, or regenerate with `--llm-analysis --llm-provider openai` and
+`OPENAI_API_KEY` set to call the OpenAI API from the terminal.
 
 ## Validation and publication
 

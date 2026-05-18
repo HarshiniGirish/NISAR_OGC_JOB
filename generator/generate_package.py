@@ -32,6 +32,10 @@ TARGET_ALIASES = {"ogc_dps": "both", "ogc-dps": "both"}
 EXCLUDED_RUNTIME_INPUTS = {"out_dir"}
 IMPLICIT_DEPENDENCY_RULES = {
     ".to_zarr": {"conda": ["zarr<3", "numcodecs<0.16"], "pip": []},
+    ".rio.to_raster": {"conda": ["rioxarray", "rasterio"], "pip": []},
+    "driver=\"COG\"": {"conda": ["rasterio"], "pip": []},
+    "driver='COG'": {"conda": ["rasterio"], "pip": []},
+    "open_dataset": {"conda": ["h5netcdf", "netcdf4", "scipy"], "pip": []},
     "s3fs": {"conda": ["fsspec", "boto3", "botocore"], "pip": []},
     "earthaccess": {"conda": ["requests"], "pip": []},
     "h5py": {"conda": ["h5netcdf"], "pip": []},
@@ -46,6 +50,7 @@ DATA_READ_CALL_MARKERS = (
     "open_dataset",
     "open_dataarray",
     "open_zarr",
+    "to_raster",
     "File",
     "rasterio.open",
 )
@@ -118,10 +123,29 @@ def merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 def normalize_manifest_config(manifest: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(manifest)
 
+    legacy_key_map = {
+        "algorithm_name": "name",
+        "algorithm_version": "version",
+        "algorithm_description": "description",
+        "code_repository": "repository_url",
+        "base_container_url": "base_container",
+    }
+    for old_key, new_key in legacy_key_map.items():
+        if old_key in normalized and new_key not in normalized:
+            normalized[new_key] = normalized.pop(old_key)
+
     if "target" in normalized:
         normalized["target"] = normalize_target(str(normalized["target"]))
     if "base_container_preference" in normalized and "base_container" not in normalized:
         normalized["base_container"] = normalized.pop("base_container_preference")
+    resources = normalized.get("resources", {})
+    if not isinstance(resources, dict):
+        resources = {}
+    for resource_key in ("ram_min", "cores_min", "outdir_max"):
+        if resource_key in normalized:
+            resources[resource_key] = normalized.pop(resource_key)
+    if resources:
+        normalized["resources"] = resources
     if "input_schema" in normalized:
         normalized["inputs"] = merge_dicts(
             normalized.get("inputs", {}), normalized.pop("input_schema") or {}
@@ -130,7 +154,25 @@ def normalize_manifest_config(manifest: dict[str, Any]) -> dict[str, Any]:
         normalized["outputs"] = merge_dicts(
             normalized.get("outputs", {}), normalized.pop("output_schema") or {}
         )
+    if isinstance(normalized.get("inputs"), list):
+        normalized["inputs"] = normalize_io_list(normalized["inputs"])
+    if isinstance(normalized.get("outputs"), list):
+        normalized["outputs"] = normalize_io_list(normalized["outputs"])
 
+    return normalized
+
+
+def normalize_io_list(items: list[Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for item in items:
+        if not isinstance(item, dict) or "name" not in item:
+            continue
+        name = str(item["name"])
+        normalized[name] = {
+            "type": item.get("type", "string"),
+            "default": item.get("default", ""),
+            "description": item.get("description") or item.get("doc", ""),
+        }
     return normalized
 
 
@@ -862,17 +904,52 @@ def build_llm_prompt(app_config: dict[str, Any], analysis: dict[str, Any]) -> st
     return json.dumps(payload, indent=2)
 
 
-def run_llm_analysis(prompt: str, enabled: bool, model: str) -> dict[str, Any]:
+def resolve_llm_provider(requested_provider: str) -> str:
+    provider = requested_provider.lower()
+    if provider != "auto":
+        return provider
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    return "openai"
+
+
+def run_llm_analysis(
+    prompt: str,
+    enabled: bool,
+    provider: str,
+    model: str | None,
+    openai_model: str,
+    anthropic_model: str,
+) -> dict[str, Any]:
     if not enabled:
         return {
             "status": "not_requested",
-            "message": "Pass --llm-analysis and set ANTHROPIC_API_KEY to run the optional semantic analysis pass.",
+            "message": (
+                "Pass --llm-analysis with OPENAI_API_KEY or ANTHROPIC_API_KEY to run the "
+                "optional semantic analysis pass. The prompt is saved for manual ChatGPT review."
+            ),
         }
 
+    provider = resolve_llm_provider(provider)
+    if provider == "openai":
+        return run_openai_analysis(prompt, model or openai_model)
+    if provider == "anthropic":
+        return run_anthropic_analysis(prompt, model or anthropic_model)
+
+    return {
+        "status": "failed",
+        "message": f"Unsupported LLM provider: {provider}. Use openai, anthropic, or auto.",
+    }
+
+
+def run_anthropic_analysis(prompt: str, model: str) -> dict[str, Any]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return {
             "status": "skipped",
+            "provider": "anthropic",
             "message": "ANTHROPIC_API_KEY is not set. llm_analysis_prompt.json was generated for offline review.",
         }
 
@@ -910,6 +987,66 @@ def run_llm_analysis(prompt: str, enabled: bool, model: str) -> dict[str, Any]:
     ).strip()
     return {
         "status": "completed",
+        "provider": "anthropic",
+        "model": model,
+        "response": response_text,
+    }
+
+
+def run_openai_analysis(prompt: str, model: str) -> dict[str, Any]:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return {
+            "status": "skipped",
+            "provider": "openai",
+            "message": "OPENAI_API_KEY is not set. llm_analysis_prompt.json was generated for manual ChatGPT review.",
+        }
+
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You review MAAP DPS and OGC application packages for reproducibility, "
+                        "portability, and scaling risks. Give actionable remediation."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.1,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=body,
+        headers={
+            "authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "status": "failed",
+            "provider": "openai",
+            "message": f"OpenAI API analysis failed: {exc}",
+        }
+
+    choices = payload.get("choices", [])
+    response_text = ""
+    if choices:
+        message = choices[0].get("message", {})
+        response_text = str(message.get("content", "")).strip()
+
+    return {
+        "status": "completed",
+        "provider": "openai",
         "model": model,
         "response": response_text,
     }
@@ -1103,6 +1240,8 @@ def classify_data_reference(value: str) -> str | None:
         return "s3"
     if "cmr.earthdata.nasa.gov" in lowered:
         return "cmr"
+    if "s3credentials" in lowered and "earthdata" in lowered:
+        return "s3"
     if "stac" in lowered and lowered.startswith(("http://", "https://")):
         return "stac"
     if looks_like_local_file_path(value):
@@ -1178,6 +1317,8 @@ def analyze_source(source_info: dict[str, Any], detected_imports: list[str], inp
             add_data_access(data_access, "stac", f"import {module_name}", "imports")
         if module_name in {"earthaccess", "cmr"}:
             add_data_access(data_access, "cmr", f"import {module_name}", "imports")
+        if module_name == "maap":
+            add_data_access(data_access, "cmr", "import maap", "imports")
 
     for node in ast.walk(tree):
         location = f"line {getattr(node, 'lineno', '?')}"
@@ -1203,10 +1344,16 @@ def analyze_source(source_info: dict[str, Any], detected_imports: list[str], inp
             call_strings = string_literals(node)
             if "earthaccess.search_data" in lowered_call_name or lowered_call_name.endswith(".search_data"):
                 add_data_access(data_access, "cmr", call_name, location)
+            if lowered_call_name.endswith((".searchcollection", ".searchgranule")):
+                add_data_access(data_access, "cmr", call_name, location)
+            if "earthdata_s3_credentials" in lowered_call_name:
+                add_data_access(data_access, "s3", call_name, location)
             if "stac" in lowered_call_name or "pystac" in lowered_call_name:
                 add_data_access(data_access, "stac", call_name, location)
             if "s3filesystem" in lowered_call_name:
                 add_data_access(data_access, "s3", call_name, location)
+            if lowered_call_name.endswith((".to_raster", ".rio.to_raster")):
+                add_data_access(data_access, "local", call_name, location)
             if is_data_read_call(call_name):
                 values_to_classify = call_strings[:1]
                 for value in values_to_classify:
@@ -1534,6 +1681,10 @@ def build_report(
 
     markdown_lines.extend(["", "## LLM-Assisted Analysis", ""])
     markdown_lines.append(f"- Status: `{llm_analysis.get('status', 'not_requested')}`")
+    if llm_analysis.get("provider"):
+        markdown_lines.append(f"- Provider: `{llm_analysis['provider']}`")
+    if llm_analysis.get("model"):
+        markdown_lines.append(f"- Model: `{llm_analysis['model']}`")
     if llm_analysis.get("message"):
         markdown_lines.append(f"- Message: {llm_analysis['message']}")
     if llm_analysis.get("response"):
@@ -1610,7 +1761,23 @@ def parse_cli_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-analysis",
         action="store_true",
-        help="Invoke the optional Anthropic semantic analysis pass when ANTHROPIC_API_KEY is set.",
+        help="Invoke the optional LLM semantic analysis pass.",
+    )
+    parser.add_argument(
+        "--llm-provider",
+        default=os.environ.get("LLM_PROVIDER", "auto"),
+        choices=["auto", "openai", "anthropic"],
+        help="LLM provider for --llm-analysis. auto prefers OPENAI_API_KEY, then ANTHROPIC_API_KEY.",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default=os.environ.get("LLM_MODEL", ""),
+        help="Optional model override for the selected LLM provider.",
+    )
+    parser.add_argument(
+        "--openai-model",
+        default=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+        help="OpenAI/ChatGPT model name used with --llm-analysis.",
     )
     parser.add_argument(
         "--anthropic-model",
@@ -1680,7 +1847,14 @@ def main() -> None:
     )
     analysis = analyze_source(source_info, detected_imports, inputs)
     llm_prompt = build_llm_prompt(app_config, analysis)
-    llm_analysis = run_llm_analysis(llm_prompt, cli_args.llm_analysis, cli_args.anthropic_model)
+    llm_analysis = run_llm_analysis(
+        llm_prompt,
+        cli_args.llm_analysis,
+        cli_args.llm_provider,
+        cli_args.llm_model or None,
+        cli_args.openai_model,
+        cli_args.anthropic_model,
+    )
     cwl_file_name = "application.cwl"
 
     context = {
@@ -1801,11 +1975,17 @@ user-writable path:
 
 `$HOME/.conda/envs/{name}`
 
-## NISAR demo tip
+## Runtime tip
 
-For a quick ADE/Jupyter smoke test, pass a small `--bbox` and `--bbox_crs`.
-Running without a bbox can try to write the full granule and may be slow or
-memory-heavy.
+For remote sensing jobs, use the smallest representative input for a first
+smoke test. If the generated CLI exposes a bbox, index-window, limit, or direct
+granule/S3 URL parameter, prefer that over a full collection search.
+
+## Optional LLM review
+
+This package includes `llm_analysis_prompt.json`. You can paste it into ChatGPT
+manually, or regenerate with `--llm-analysis --llm-provider openai` and
+`OPENAI_API_KEY` set to call the OpenAI API from the terminal.
 
 ## Validation and publication
 

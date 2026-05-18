@@ -483,6 +483,15 @@ def build_dataset(
     )
 
 
+def write_zarr_v2(ds: xr.Dataset, out_path: str) -> None:
+    """Write stable Zarr v2 output even when the ambient notebook env has Zarr v3."""
+    kwargs = {"mode": "w", "consolidated": True}
+    try:
+        ds.to_zarr(out_path, zarr_format=2, **kwargs)
+    except TypeError:
+        ds.to_zarr(out_path, zarr_version=2, **kwargs)
+
+
 def main() -> None:
     args = parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
@@ -537,7 +546,7 @@ def main() -> None:
     if os.path.exists(out_path):
         shutil.rmtree(out_path)
 
-    ds.to_zarr(out_path, mode="w", consolidated=True)
+    write_zarr_v2(ds, out_path)
 
     manifest = {
         "out_zarr": out_path,
