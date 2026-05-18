@@ -5,10 +5,13 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import shutil
 import stat
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -24,12 +27,73 @@ PIP_ONLY_PACKAGES = {"maap-py"}
 DEFAULT_SCRIPT_PATH = INPUT_DIR / "nisar_access_subset.py"
 DEFAULT_BASE_CONTAINER = "mas.maap-project.org/root/maap-workspaces/custom_images/maap_base:v5.0.0"
 DEFAULT_TARGET = "ogc"
+DEFAULT_MANIFEST_NAMES = ("app.yaml", "app.yml")
+TARGET_ALIASES = {"ogc_dps": "both", "ogc-dps": "both"}
 EXCLUDED_RUNTIME_INPUTS = {"out_dir"}
 IMPLICIT_DEPENDENCY_RULES = {
     ".to_zarr": {"conda": ["zarr<3", "numcodecs<0.16"], "pip": []},
     "s3fs": {"conda": ["fsspec", "boto3", "botocore"], "pip": []},
     "earthaccess": {"conda": ["requests"], "pip": []},
     "h5py": {"conda": ["h5netcdf"], "pip": []},
+}
+DATA_READ_CALL_MARKERS = (
+    "open",
+    "Path",
+    "read_csv",
+    "read_json",
+    "read_parquet",
+    "read_table",
+    "open_dataset",
+    "open_dataarray",
+    "open_zarr",
+    "File",
+    "rasterio.open",
+)
+LOCAL_PATH_PREFIXES = (
+    "/home/",
+    "/Users/",
+    "/tmp/",
+    "/mnt/",
+    "/data/",
+    "/workspace/",
+    "./",
+    "../",
+)
+LOCAL_FILE_EXTENSIONS = (
+    ".csv",
+    ".json",
+    ".parquet",
+    ".tif",
+    ".tiff",
+    ".nc",
+    ".h5",
+    ".hdf5",
+    ".zarr",
+    ".geojson",
+)
+KNOWN_GLOBAL_NAMES = {
+    "False",
+    "None",
+    "True",
+    "__file__",
+    "__name__",
+    "bool",
+    "dict",
+    "enumerate",
+    "float",
+    "int",
+    "len",
+    "list",
+    "max",
+    "min",
+    "open",
+    "print",
+    "range",
+    "set",
+    "sorted",
+    "str",
+    "sum",
+    "tuple",
 }
 
 
@@ -49,6 +113,40 @@ def merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
             merged[key] = value
 
     return merged
+
+
+def normalize_manifest_config(manifest: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(manifest)
+
+    if "target" in normalized:
+        normalized["target"] = normalize_target(str(normalized["target"]))
+    if "base_container_preference" in normalized and "base_container" not in normalized:
+        normalized["base_container"] = normalized.pop("base_container_preference")
+    if "input_schema" in normalized:
+        normalized["inputs"] = merge_dicts(
+            normalized.get("inputs", {}), normalized.pop("input_schema") or {}
+        )
+    if "output_schema" in normalized:
+        normalized["outputs"] = merge_dicts(
+            normalized.get("outputs", {}), normalized.pop("output_schema") or {}
+        )
+
+    return normalized
+
+
+def discover_manifest(cli_manifest: str, source_path: Path) -> Path | None:
+    if cli_manifest:
+        manifest_path = Path(cli_manifest)
+        if not manifest_path.is_absolute():
+            manifest_path = ROOT / manifest_path
+        return manifest_path.resolve()
+
+    candidates = [source_path.parent / name for name in DEFAULT_MANIFEST_NAMES]
+    candidates.extend(INPUT_DIR / name for name in DEFAULT_MANIFEST_NAMES)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return None
 
 
 def write_text(path: Path, text: str) -> None:
@@ -75,6 +173,174 @@ def slugify_name(value: str) -> str:
     value = re.sub(r"[^a-zA-Z0-9_]+", "_", value)
     value = re.sub(r"_+", "_", value).strip("_").lower()
     return value or "generated_app"
+
+
+def normalize_target(value: str | None) -> str:
+    target = (value or DEFAULT_TARGET).strip().lower()
+    target = TARGET_ALIASES.get(target, target)
+    if target not in {"ogc", "dps", "both"}:
+        raise ValueError("target must be one of: ogc, dps, both")
+    return target
+
+
+def target_includes(target: str, requested: str) -> bool:
+    normalized = normalize_target(target)
+    return normalized == "both" or normalized == requested
+
+
+def source_label(path: Path) -> str:
+    return str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path)
+
+
+def get_call_name(func: ast.AST) -> str:
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        parent = get_call_name(func.value)
+        return f"{parent}.{func.attr}" if parent else func.attr
+    return ""
+
+
+def get_assigned_names(node: ast.AST) -> set[str]:
+    names: set[str] = set()
+
+    if isinstance(node, ast.Name):
+        names.add(node.id)
+    elif isinstance(node, (ast.Tuple, ast.List)):
+        for item in node.elts:
+            names.update(get_assigned_names(item))
+    elif isinstance(node, ast.Attribute):
+        return names
+
+    return names
+
+
+def infer_type_from_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return "integer"
+    if isinstance(value, float):
+        return "float"
+    return "string"
+
+
+def normalize_notebook_code(source: str) -> tuple[str, list[dict[str, Any]]]:
+    normalized_lines = []
+    magic_lines = []
+
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        stripped = line.lstrip()
+        if stripped.startswith(("%", "!", "?")):
+            normalized_lines.append(f"# NOTEBOOK_MAGIC_REMOVED: {line}")
+            magic_lines.append(
+                {
+                    "line": lineno,
+                    "source": line.strip(),
+                    "message": "Notebook magic or shell escape is not portable in batch execution.",
+                }
+            )
+        else:
+            normalized_lines.append(line)
+
+    return "\n".join(normalized_lines), magic_lines
+
+
+def cell_source(cell: dict[str, Any]) -> str:
+    source = cell.get("source", "")
+    if isinstance(source, list):
+        return "".join(str(part) for part in source)
+    return str(source)
+
+
+def is_probable_parameter_cell(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+
+    has_assignment = False
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            has_assignment = True
+            continue
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            continue
+        return False
+
+    return has_assignment
+
+
+def read_source_file(source_path: Path) -> dict[str, Any]:
+    if source_path.suffix.lower() != ".ipynb":
+        source = source_path.read_text(encoding="utf-8")
+        return {
+            "kind": "script",
+            "path": source_path,
+            "source": source,
+            "raw_source": source,
+            "code_units": [{"index": 0, "source": source, "tags": [], "start_line": 1}],
+            "parameters_source": "",
+            "parameters_cell_index": None,
+            "magic_lines": [],
+        }
+
+    notebook = json.loads(source_path.read_text(encoding="utf-8"))
+    code_units = []
+    script_parts = []
+    parameters_source = ""
+    parameters_cell_index = None
+    magic_lines: list[dict[str, Any]] = []
+    current_line = 1
+
+    for cell_index, cell in enumerate(notebook.get("cells", [])):
+        if cell.get("cell_type") != "code":
+            continue
+
+        raw_cell_source = cell_source(cell)
+        normalized_source, cell_magic_lines = normalize_notebook_code(raw_cell_source)
+        tags = list(cell.get("metadata", {}).get("tags", []))
+        unit = {
+            "index": cell_index,
+            "source": normalized_source,
+            "raw_source": raw_cell_source,
+            "tags": tags,
+            "start_line": current_line + 1,
+        }
+        code_units.append(unit)
+
+        for magic_line in cell_magic_lines:
+            magic_line["cell"] = cell_index
+            magic_line["line"] = current_line + magic_line["line"]
+            magic_lines.append(magic_line)
+
+        script_parts.append(f"# %% notebook cell {cell_index}\n{normalized_source}")
+        current_line += normalized_source.count("\n") + 2
+
+        if parameters_source:
+            continue
+        if "parameters" in tags or (parameters_cell_index is None and is_probable_parameter_cell(normalized_source)):
+            parameters_source = normalized_source
+            parameters_cell_index = cell_index
+
+    script_source = "\n\n".join(script_parts).strip() + "\n"
+    return {
+        "kind": "notebook",
+        "path": source_path,
+        "source": script_source,
+        "raw_source": "\n\n".join(cell.get("raw_source", cell["source"]) for cell in code_units),
+        "code_units": code_units,
+        "parameters_source": parameters_source,
+        "parameters_cell_index": parameters_cell_index,
+        "magic_lines": magic_lines,
+    }
+
+
+def materialize_entrypoint(source_info: dict[str, Any], destination: Path) -> None:
+    if source_info["kind"] == "notebook":
+        write_text(destination, source_info["source"])
+    else:
+        shutil.copy2(source_info["path"], destination)
 
 
 def infer_repository_url() -> str:
@@ -169,11 +435,10 @@ def stringify_default(value: Any) -> str:
     return str(value)
 
 
-def infer_argparse_inputs(script_path: Path) -> dict[str, dict[str, str]]:
-    source = script_path.read_text(encoding="utf-8")
+def infer_argparse_inputs_from_source(source: str) -> dict[str, dict[str, Any]]:
     tree = ast.parse(source)
     constants = collect_module_constants(tree)
-    inputs: dict[str, dict[str, str]] = {}
+    inputs: dict[str, dict[str, Any]] = {}
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -214,29 +479,85 @@ def infer_argparse_inputs(script_path: Path) -> dict[str, dict[str, str]]:
             "default": stringify_default(default),
             "description": str(description),
             "inferred": True,
+            "source": "argparse",
         }
 
     return inputs
 
 
-def infer_description(script_path: Path) -> str:
-    source = script_path.read_text(encoding="utf-8")
+def infer_argparse_inputs(script_path: Path) -> dict[str, dict[str, Any]]:
+    return infer_argparse_inputs_from_source(script_path.read_text(encoding="utf-8"))
+
+
+def infer_papermill_inputs(parameters_source: str) -> dict[str, dict[str, Any]]:
+    if not parameters_source:
+        return {}
+
+    try:
+        tree = ast.parse(parameters_source)
+    except SyntaxError:
+        return {}
+
+    inputs: dict[str, dict[str, Any]] = {}
+    constants: dict[str, Any] = {}
+
+    for node in tree.body:
+        target: ast.AST | None = None
+        value_node: ast.AST | None = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            value_node = node.value
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+            value_node = node.value
+
+        if not isinstance(target, ast.Name) or value_node is None:
+            continue
+        if target.id.startswith("_") or target.id in EXCLUDED_RUNTIME_INPUTS:
+            continue
+
+        value = safe_eval_expr(value_node, constants)
+        constants[target.id] = value
+        inputs[target.id] = {
+            "type": infer_type_from_value(value),
+            "default": stringify_default(value),
+            "description": "Papermill-style parameter inferred from the notebook parameters cell.",
+            "inferred": True,
+            "source": "papermill",
+        }
+
+    return inputs
+
+
+def infer_description_from_source(source: str, source_path: Path) -> str:
     module = ast.parse(source)
     docstring = ast.get_docstring(module)
     if not docstring:
-        return f"OGC Application Package generated from {script_path.name}."
+        return f"Application package generated from {source_path.name}."
     first_paragraph = docstring.strip().split("\n\n", 1)[0]
     return " ".join(line.strip() for line in first_paragraph.splitlines() if line.strip())
 
 
-def infer_app_config(script_path: Path, target: str) -> dict[str, Any]:
-    name = slugify_name(script_path.stem)
+def infer_description(script_path: Path) -> str:
+    return infer_description_from_source(script_path.read_text(encoding="utf-8"), script_path)
+
+
+def infer_inputs(source_info: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    inputs = infer_papermill_inputs(source_info.get("parameters_source", ""))
+    inputs.update(infer_argparse_inputs_from_source(source_info["source"]))
+    return inputs
+
+
+def infer_app_config(source_path: Path, source_info: dict[str, Any], target: str) -> dict[str, Any]:
+    name = slugify_name(source_path.stem)
+    entrypoint_suffix = ".py" if source_info["kind"] == "notebook" else source_path.suffix
+    entrypoint = f"{name}{entrypoint_suffix}"
     return {
         "name": name,
         "version": "main",
-        "target": target,
-        "entrypoint": script_path.name,
-        "description": infer_description(script_path),
+        "target": normalize_target(target),
+        "entrypoint": entrypoint,
+        "description": infer_description_from_source(source_info["source"], source_path),
         "repository_url": infer_repository_url(),
         "base_container": DEFAULT_BASE_CONTAINER,
         "resources": {
@@ -244,7 +565,7 @@ def infer_app_config(script_path: Path, target: str) -> dict[str, Any]:
             "cores_min": 2,
             "outdir_max": 20,
         },
-        "inputs": infer_argparse_inputs(script_path),
+        "inputs": infer_inputs(source_info),
         "outputs": {
             "output": {
                 "type": "directory",
@@ -257,15 +578,16 @@ def infer_app_config(script_path: Path, target: str) -> dict[str, Any]:
             "pip": [],
         },
         "inference": {
-            "mode": "python_only",
-            "source": str(script_path.relative_to(ROOT) if script_path.is_relative_to(ROOT) else script_path),
+            "mode": "notebook" if source_info["kind"] == "notebook" else "python_only",
+            "source": source_label(source_path),
+            "source_kind": source_info["kind"],
+            "parameters_cell_index": source_info.get("parameters_cell_index"),
             "manifest_required": False,
         },
     }
 
 
-def detect_imports(script_path: Path) -> sorted:
-    source = script_path.read_text(encoding="utf-8")
+def detect_imports_from_source(source: str) -> list[str]:
     tree = ast.parse(source)
 
     imports = set()
@@ -282,8 +604,13 @@ def detect_imports(script_path: Path) -> sorted:
     return sorted(imports)
 
 
-def detect_implicit_dependencies(script_path: Path, detected_imports: list[str]) -> dict[str, list[str]]:
-    source = script_path.read_text(encoding="utf-8")
+def detect_imports(script_path: Path) -> list[str]:
+    return detect_imports_from_source(script_path.read_text(encoding="utf-8"))
+
+
+def detect_implicit_dependencies_from_source(
+    source: str, detected_imports: list[str]
+) -> dict[str, list[str]]:
     conda_dependencies: set[str] = set()
     pip_dependencies: set[str] = set()
 
@@ -296,6 +623,12 @@ def detect_implicit_dependencies(script_path: Path, detected_imports: list[str])
         "conda": sorted(conda_dependencies),
         "pip": sorted(pip_dependencies),
     }
+
+
+def detect_implicit_dependencies(script_path: Path, detected_imports: list[str]) -> dict[str, list[str]]:
+    return detect_implicit_dependencies_from_source(
+        script_path.read_text(encoding="utf-8"), detected_imports
+    )
 
 
 def resolve_dependencies(
@@ -443,7 +776,275 @@ def build_cwl_inputs_block(inputs: dict[str, Any]) -> str:
         lines.append("    inputBinding:")
         lines.append(f"      prefix: --{name}")
 
-    return "\n".join(lines)
+    return "\n".join(lines) if lines else "  {}"
+
+
+def build_cwl_workflow_inputs_block(inputs: dict[str, Any]) -> str:
+    lines = []
+
+    for name, config in inputs.items():
+        input_type = config.get("type", "string")
+        cwl_type_map = {
+            "int": "int",
+            "integer": "int",
+            "float": "float",
+            "double": "double",
+            "boolean": "boolean",
+            "bool": "boolean",
+        }
+        lines.append(f"  {name}: {cwl_type_map.get(input_type, 'string')}")
+
+    return "\n".join(lines) if lines else "  {}"
+
+
+def build_cwl_workflow_step_inputs_block(inputs: dict[str, Any]) -> str:
+    lines = [f"      {name}: {name}" for name in inputs]
+    return "\n".join(lines) if lines else "      {}"
+
+
+def build_stac_input_manifest(app_config: dict[str, Any], inputs: dict[str, Any]) -> str:
+    properties = {
+        name: {
+            "type": config.get("type", "string"),
+            "default": config.get("default", ""),
+            "description": config.get("description", ""),
+        }
+        for name, config in inputs.items()
+    }
+    manifest = {
+        "type": "FeatureCollection",
+        "features": [],
+        "links": [],
+        "metadata": {
+            "application": app_config.get("name"),
+            "role": "sample-input-manifest",
+            "input_schema": properties,
+        },
+    }
+    return json.dumps(manifest, indent=2) + "\n"
+
+
+def build_stac_output_manifest(app_config: dict[str, Any], outputs: dict[str, Any]) -> str:
+    manifest = {
+        "type": "FeatureCollection",
+        "features": [],
+        "links": [],
+        "metadata": {
+            "application": app_config.get("name"),
+            "role": "expected-output-manifest",
+            "output_schema": outputs,
+        },
+    }
+    return json.dumps(manifest, indent=2) + "\n"
+
+
+def build_llm_prompt(app_config: dict[str, Any], analysis: dict[str, Any]) -> str:
+    payload = {
+        "task": (
+            "Review this generated MAAP DPS / OGC Application Package analysis. "
+            "Identify semantic reproducibility or scaling risks that rule-based linters may miss, "
+            "especially hidden cell-order dependencies and undeclared environment state."
+        ),
+        "app": {
+            "name": app_config.get("name"),
+            "target": app_config.get("target"),
+            "inputs": app_config.get("inputs", {}),
+            "outputs": app_config.get("outputs", {}),
+            "resources": app_config.get("resources", {}),
+        },
+        "static_analysis": analysis,
+        "response_format": [
+            "List blocking issues first.",
+            "For each issue, include remediation that can be applied before registration.",
+            "If no blocking issues are found, say what residual risks remain.",
+        ],
+    }
+    return json.dumps(payload, indent=2)
+
+
+def run_llm_analysis(prompt: str, enabled: bool, model: str) -> dict[str, Any]:
+    if not enabled:
+        return {
+            "status": "not_requested",
+            "message": "Pass --llm-analysis and set ANTHROPIC_API_KEY to run the optional semantic analysis pass.",
+        }
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {
+            "status": "skipped",
+            "message": "ANTHROPIC_API_KEY is not set. llm_analysis_prompt.json was generated for offline review.",
+        }
+
+    body = json.dumps(
+        {
+            "model": model,
+            "max_tokens": 2000,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=body,
+        headers={
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+            "x-api-key": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "status": "failed",
+            "message": f"Anthropic API analysis failed: {exc}",
+        }
+
+    response_text = "\n".join(
+        block.get("text", "")
+        for block in payload.get("content", [])
+        if isinstance(block, dict) and block.get("type") == "text"
+    ).strip()
+    return {
+        "status": "completed",
+        "model": model,
+        "response": response_text,
+    }
+
+
+def build_dps_registration_script(config_file_name: str = "algorithm_config.yaml") -> str:
+    return f'''#!/usr/bin/env python3
+"""Register the generated DPS algorithm with a configured MAAP API endpoint.
+
+Environment variables:
+- MAAP_API_URL: base URL for the MAAP API.
+- MAAP_API_TOKEN or MAAP_TOKEN: bearer token for registration.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.request
+from pathlib import Path
+
+import yaml
+
+
+def main() -> None:
+    package_dir = Path(__file__).resolve().parent
+    config = yaml.safe_load((package_dir / "{config_file_name}").read_text(encoding="utf-8"))
+    api_url = os.environ.get("MAAP_API_URL", "").rstrip("/")
+    token = os.environ.get("MAAP_API_TOKEN") or os.environ.get("MAAP_TOKEN")
+    if not api_url or not token:
+        raise SystemExit("Set MAAP_API_URL and MAAP_API_TOKEN before DPS registration.")
+
+    payload = json.dumps(config).encode("utf-8")
+    request = urllib.request.Request(
+        f"{{api_url}}/api/algorithms",
+        data=payload,
+        headers={{
+            "authorization": f"Bearer {{token}}",
+            "content-type": "application/json",
+        }},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=120) as response:
+        sys.stdout.write(response.read().decode("utf-8"))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def build_ogc_publish_script() -> str:
+    return '''#!/usr/bin/env python3
+"""Publish the generated OGC Application Package to a configured registry.
+
+Environment variables:
+- OGC_REGISTRY_URL: registry endpoint accepting multipart/package metadata.
+- OGC_REGISTRY_TOKEN: optional bearer token.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.request
+from pathlib import Path
+
+
+def main() -> None:
+    package_dir = Path(__file__).resolve().parent
+    registry_url = os.environ.get("OGC_REGISTRY_URL", "").rstrip("/")
+    token = os.environ.get("OGC_REGISTRY_TOKEN", "")
+    if not registry_url:
+        raise SystemExit("Set OGC_REGISTRY_URL before publishing.")
+
+    payload = {
+        "command_line_tool": (package_dir / "application.cwl").read_text(encoding="utf-8"),
+        "workflow": (package_dir / "workflow.cwl").read_text(encoding="utf-8"),
+        "stac_input": json.loads((package_dir / "stac-input.json").read_text(encoding="utf-8")),
+        "stac_output": json.loads((package_dir / "stac-output.json").read_text(encoding="utf-8")),
+    }
+    headers = {"content-type": "application/json"}
+    if token:
+        headers["authorization"] = f"Bearer {token}"
+
+    request = urllib.request.Request(
+        f"{registry_url}/applications",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=120) as response:
+        sys.stdout.write(response.read().decode("utf-8"))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def build_validation_script(target: str, cwl_file_name: str) -> str:
+    cwl_commands = ""
+    if target_includes(target, "ogc"):
+        cwl_commands = f'''
+if command -v cwltool >/dev/null 2>&1; then
+  cwltool --validate "{cwl_file_name}"
+  cwltool --validate workflow.cwl
+else
+  echo "cwltool not installed; skipping CWL validation."
+fi
+'''
+    else:
+        cwl_commands = 'echo "OGC target not requested; skipping CWL validation."\n'
+
+    return f'''#!/usr/bin/env bash
+set -euo pipefail
+
+basedir="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd -P)"
+cd "${{basedir}}"
+
+PYTHON_BIN="${{PYTHON_BIN:-python3}}"
+if ! command -v "${{PYTHON_BIN}}" >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+fi
+
+"${{PYTHON_BIN}}" -m py_compile *.py
+{cwl_commands}
+if command -v docker >/dev/null 2>&1; then
+  docker build -t "{target}-generated-app:local" .
+else
+  echo "docker not installed; skipping container build."
+fi
+'''
 
 
 def build_requirements_txt(dependencies: dict[str, list[str]]) -> str:
@@ -460,6 +1061,322 @@ def build_requirements_txt(dependencies: dict[str, list[str]]) -> str:
     pip_lines.extend(dependencies.get("pip", []))
 
     return "\n".join(sorted(set(pip_lines))) + "\n"
+
+
+def issue(rule: str, severity: str, message: str, remediation: str, location: str = "") -> dict[str, str]:
+    item = {
+        "rule": rule,
+        "severity": severity,
+        "message": message,
+        "remediation": remediation,
+    }
+    if location:
+        item["location"] = location
+    return item
+
+
+def looks_like_local_file_path(value: str) -> bool:
+    if not value or value.startswith(("s3://", "http://", "https://")):
+        return False
+    normalized = value.replace("\\", "/")
+    if re.match(r"^[A-Za-z]:/", normalized):
+        return True
+    if normalized.startswith(LOCAL_PATH_PREFIXES):
+        return True
+    has_path_separator = "/" in normalized
+    return has_path_separator and any(
+        normalized.endswith(extension) for extension in LOCAL_FILE_EXTENSIONS
+    )
+
+
+def string_literals(node: ast.AST) -> list[str]:
+    values = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.Constant) and isinstance(child.value, str):
+            values.append(child.value)
+    return values
+
+
+def classify_data_reference(value: str) -> str | None:
+    lowered = value.lower()
+    if lowered.startswith("s3://") or "amazonaws.com" in lowered:
+        return "s3"
+    if "cmr.earthdata.nasa.gov" in lowered:
+        return "cmr"
+    if "stac" in lowered and lowered.startswith(("http://", "https://")):
+        return "stac"
+    if looks_like_local_file_path(value):
+        return "local"
+    return None
+
+
+def is_data_read_call(call_name: str) -> bool:
+    lowered = call_name.lower()
+    if lowered in {"open", "path", "pathlib.path", "h5py.file"}:
+        return True
+    return lowered.endswith(
+        (
+            ".open",
+            ".read_csv",
+            ".read_json",
+            ".read_parquet",
+            ".read_table",
+            ".open_dataset",
+            ".open_dataarray",
+            ".open_zarr",
+        )
+    )
+
+
+def add_data_access(
+    data_access: dict[str, list[dict[str, Any]]],
+    access_type: str,
+    evidence: str,
+    location: str,
+) -> None:
+    item = {"evidence": evidence, "location": location}
+    if item not in data_access[access_type]:
+        data_access[access_type].append(item)
+
+
+def analyze_source(source_info: dict[str, Any], detected_imports: list[str], inputs: dict[str, Any]) -> dict[str, Any]:
+    source = source_info["source"]
+    data_access: dict[str, list[dict[str, Any]]] = {
+        "s3": [],
+        "stac": [],
+        "cmr": [],
+        "local": [],
+    }
+    issues: list[dict[str, str]] = []
+    parse_errors = []
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return {
+            "source_kind": source_info["kind"],
+            "code_cell_count": len(source_info.get("code_units", [])),
+            "parameters_cell_index": source_info.get("parameters_cell_index"),
+            "data_access": data_access,
+            "issues": [
+                issue(
+                    "python_syntax_error",
+                    "error",
+                    f"Source could not be parsed: {exc.msg}.",
+                    "Fix syntax errors before generating a scalable package.",
+                    f"line {exc.lineno}",
+                )
+            ],
+            "parse_errors": [{"message": exc.msg, "line": exc.lineno}],
+            "lint_tools": lint_tool_summary(source_info),
+        }
+
+    for module_name in detected_imports:
+        if module_name in {"s3fs", "boto3", "botocore"}:
+            add_data_access(data_access, "s3", f"import {module_name}", "imports")
+        if module_name in {"pystac", "pystac_client"}:
+            add_data_access(data_access, "stac", f"import {module_name}", "imports")
+        if module_name in {"earthaccess", "cmr"}:
+            add_data_access(data_access, "cmr", f"import {module_name}", "imports")
+
+    for node in ast.walk(tree):
+        location = f"line {getattr(node, 'lineno', '?')}"
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            access_type = classify_data_reference(node.value)
+            if access_type:
+                add_data_access(data_access, access_type, node.value, location)
+            if looks_like_local_file_path(node.value):
+                issues.append(
+                    issue(
+                        "hardcoded_local_path",
+                        "warning",
+                        f"Hardcoded local path detected: {node.value}",
+                        "Declare the path as an input parameter or stage it inside the runtime output/work directory.",
+                        location,
+                    )
+                )
+
+        if isinstance(node, ast.Call):
+            call_name = get_call_name(node.func)
+            lowered_call_name = call_name.lower()
+            call_strings = string_literals(node)
+            if "earthaccess.search_data" in lowered_call_name or lowered_call_name.endswith(".search_data"):
+                add_data_access(data_access, "cmr", call_name, location)
+            if "stac" in lowered_call_name or "pystac" in lowered_call_name:
+                add_data_access(data_access, "stac", call_name, location)
+            if "s3filesystem" in lowered_call_name:
+                add_data_access(data_access, "s3", call_name, location)
+            if is_data_read_call(call_name):
+                values_to_classify = call_strings[:1]
+                for value in values_to_classify:
+                    access_type = classify_data_reference(value)
+                    if access_type:
+                        add_data_access(data_access, access_type, f"{call_name}({value})", location)
+            if lowered_call_name in {"input", "ipywidgets.interact"} or lowered_call_name.startswith("ipywidgets."):
+                issues.append(
+                    issue(
+                        "interactive_runtime",
+                        "error",
+                        f"Interactive call `{call_name}` blocks headless DPS/OGC execution.",
+                        "Replace interactive prompts/widgets with declared app.yaml or argparse inputs.",
+                        location,
+                    )
+                )
+            if lowered_call_name.endswith(("datetime.now", "datetime.utcnow", "date.today", "time.time", "uuid4")):
+                issues.append(
+                    issue(
+                        "nondeterministic_time",
+                        "warning",
+                        f"Runtime-dependent value `{call_name}` can make outputs non-reproducible.",
+                        "Pass timestamps/run IDs explicitly or write them only as provenance metadata.",
+                        location,
+                    )
+                )
+            if lowered_call_name.endswith(("getenv", "os.getenv")):
+                env_name = call_strings[0] if call_strings else ""
+                if env_name and env_name not in inputs:
+                    issues.append(
+                        issue(
+                            "undeclared_environment_dependency",
+                            "warning",
+                            f"Environment variable `{env_name}` is read but not declared as an input.",
+                            "Document required environment variables in app.yaml or convert them to explicit parameters.",
+                            location,
+                        )
+                    )
+
+        if isinstance(node, ast.Subscript):
+            value_name = get_call_name(node.value)
+            if value_name == "os.environ":
+                env_name = ""
+                if isinstance(node.slice, ast.Constant):
+                    env_name = str(node.slice.value)
+                if env_name and env_name not in inputs:
+                    issues.append(
+                        issue(
+                            "undeclared_environment_dependency",
+                            "warning",
+                            f"Environment variable `{env_name}` is read but not declared as an input.",
+                            "Document required environment variables in app.yaml or convert them to explicit parameters.",
+                            location,
+                        )
+                    )
+
+    stochastic_imports = {"random", "torch", "tensorflow", "sklearn"} & set(detected_imports)
+    if any(marker in source for marker in ("np.random", "numpy.random", ".random.")):
+        stochastic_imports.add("numpy")
+    source_lower = source.lower()
+    has_seed = any(marker in source_lower for marker in (".seed(", "manual_seed(", "random_state="))
+    if stochastic_imports and not has_seed:
+        issues.append(
+            issue(
+                "missing_random_seed",
+                "warning",
+                f"Stochastic libraries imported without an obvious seed: {', '.join(sorted(stochastic_imports))}.",
+                "Set deterministic seeds or expose a seed parameter when random behavior affects outputs.",
+            )
+        )
+
+    for magic_line in source_info.get("magic_lines", []):
+        issues.append(
+            issue(
+                "notebook_magic",
+                "error",
+                magic_line["message"],
+                "Move shell setup into Dockerfile/build.sh or convert notebook magic to normal Python code.",
+                f"notebook cell {magic_line.get('cell')}, line {magic_line.get('line')}",
+            )
+        )
+
+    issues.extend(detect_implicit_cell_state(source_info))
+
+    if not inputs:
+        issues.append(
+            issue(
+                "missing_declared_parameters",
+                "info",
+                "No app inputs were inferred or declared.",
+                "Add argparse options, a Papermill parameters cell, or an app.yaml inputs section.",
+            )
+        )
+
+    return {
+        "source_kind": source_info["kind"],
+        "code_cell_count": len(source_info.get("code_units", [])),
+        "parameters_cell_index": source_info.get("parameters_cell_index"),
+        "data_access": data_access,
+        "issues": issues,
+        "parse_errors": parse_errors,
+        "lint_tools": lint_tool_summary(source_info),
+    }
+
+
+def detect_implicit_cell_state(source_info: dict[str, Any]) -> list[dict[str, str]]:
+    if source_info["kind"] != "notebook":
+        return []
+
+    issues: list[dict[str, str]] = []
+    previous_assignments: set[str] = set()
+    imported_names: set[str] = set()
+
+    for unit in source_info.get("code_units", []):
+        try:
+            tree = ast.parse(unit["source"])
+        except SyntaxError:
+            continue
+
+        loaded_names: set[str] = set()
+        assigned_names: set[str] = set()
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    imported_names.add(alias.asname or alias.name.split(".")[0])
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                loaded_names.add(node.id)
+            elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.For, ast.With)):
+                targets = []
+                if isinstance(node, ast.Assign):
+                    targets = list(node.targets)
+                elif isinstance(node, ast.AnnAssign):
+                    targets = [node.target]
+                elif isinstance(node, ast.For):
+                    targets = [node.target]
+                for target in targets:
+                    assigned_names.update(get_assigned_names(target))
+
+        state_dependencies = sorted(
+            name
+            for name in loaded_names
+            if name in previous_assignments and name not in imported_names and name not in KNOWN_GLOBAL_NAMES
+        )
+        if state_dependencies:
+            issues.append(
+                issue(
+                    "implicit_notebook_state",
+                    "info",
+                    "Notebook cell depends on variables from earlier cells: "
+                    + ", ".join(state_dependencies),
+                    "Generated scripts run cells top-to-bottom; keep this order explicit or refactor shared state into functions.",
+                    f"notebook cell {unit['index']}",
+                )
+            )
+
+        previous_assignments.update(assigned_names)
+
+    return issues
+
+
+def lint_tool_summary(source_info: dict[str, Any]) -> dict[str, Any]:
+    recommended = ["ruff", "flake8", "mypy"]
+    if source_info["kind"] == "notebook":
+        recommended.extend(["nbqa ruff", "nbqa mypy", "pynblint", "julynter"])
+    return {
+        "executed": [],
+        "recommended": recommended,
+        "note": "Install these tools in CI to enforce the same reproducibility checks automatically.",
+    }
 
 
 def build_build_script(
@@ -507,8 +1424,12 @@ if command -v conda >/dev/null 2>&1; then
 print("Environment validation successful.")
 PY
 else
-  python -m pip install -r "${{basedir}}/requirements.txt"
-  python -m py_compile "${{basedir}}/{entrypoint}"
+  PYTHON_BIN="${{PYTHON_BIN:-python3}}"
+  if ! command -v "${{PYTHON_BIN}}" >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  fi
+  "${{PYTHON_BIN}}" -m pip install -r "${{basedir}}/requirements.txt"
+  "${{PYTHON_BIN}}" -m py_compile "${{basedir}}/{entrypoint}"
 fi
 """
 
@@ -517,6 +1438,8 @@ def build_report(
     app_config: dict[str, Any],
     detected_imports: list[str],
     inferred_inputs: dict[str, Any],
+    analysis: dict[str, Any],
+    llm_analysis: dict[str, Any],
     implicit_dependencies: dict[str, list[str]],
     dependencies: dict[str, list[str]],
     generated_files: list[str],
@@ -529,6 +1452,8 @@ def build_report(
         "inference": app_config.get("inference", {}),
         "detected_imports": detected_imports,
         "inferred_inputs": inferred_inputs,
+        "analysis": analysis,
+        "llm_analysis": llm_analysis,
         "implicit_dependencies": implicit_dependencies,
         "resolved_dependencies": dependencies,
         "generated_files": generated_files,
@@ -575,6 +1500,44 @@ def build_report(
             )
     else:
         markdown_lines.append("No command-line inputs were inferred.")
+
+    markdown_lines.extend(["", "## Static Analysis", ""])
+
+    issue_counts: dict[str, int] = {}
+    for item in analysis.get("issues", []):
+        severity = item.get("severity", "info")
+        issue_counts[severity] = issue_counts.get(severity, 0) + 1
+
+    if issue_counts:
+        markdown_lines.append(
+            "- Findings: "
+            + ", ".join(f"{severity}={count}" for severity, count in sorted(issue_counts.items()))
+        )
+    else:
+        markdown_lines.append("- Findings: none")
+
+    markdown_lines.append(
+        f"- Source kind: `{analysis.get('source_kind')}` with `{analysis.get('code_cell_count')}` code unit(s)"
+    )
+    markdown_lines.append("- Data access:")
+    for access_type, items in analysis.get("data_access", {}).items():
+        markdown_lines.append(f"  - `{access_type}`: {len(items)} signal(s)")
+
+    if analysis.get("issues"):
+        markdown_lines.extend(["", "| Severity | Rule | Location | Guidance |", "| --- | --- | --- | --- |"])
+        for item in analysis["issues"]:
+            guidance = str(item.get("remediation", "")).replace("|", "\\|")
+            location = str(item.get("location", "")).replace("|", "\\|")
+            markdown_lines.append(
+                f"| `{item.get('severity')}` | `{item.get('rule')}` | {location} | {guidance} |"
+            )
+
+    markdown_lines.extend(["", "## LLM-Assisted Analysis", ""])
+    markdown_lines.append(f"- Status: `{llm_analysis.get('status', 'not_requested')}`")
+    if llm_analysis.get("message"):
+        markdown_lines.append(f"- Message: {llm_analysis['message']}")
+    if llm_analysis.get("response"):
+        markdown_lines.extend(["", llm_analysis["response"], ""])
 
     markdown_lines.extend(["", "## Implicit Dependencies", ""])
 
@@ -626,23 +1589,33 @@ def parse_cli_args() -> argparse.Namespace:
         "script",
         nargs="?",
         default=str(DEFAULT_SCRIPT_PATH),
-        help="Python script to package. Defaults to input/nisar_access_subset.py.",
+        help="Python script or .ipynb notebook to package. Defaults to input/nisar_access_subset.py.",
     )
     parser.add_argument(
         "--manifest",
         default="",
-        help="Optional app.yml override. Not required for Python-only generation.",
+        help="Optional app.yaml/app.yml override. Auto-discovers input/app.yaml when omitted.",
     )
     parser.add_argument(
         "--target",
         default=DEFAULT_TARGET,
-        choices=["ogc", "dps", "ogc_dps"],
+        choices=["ogc", "dps", "both", "ogc_dps"],
         help="Package target to record in generated metadata. Defaults to ogc.",
     )
     parser.add_argument(
         "--output-dir",
         default=str(OUTPUT_DIR),
         help="Directory where generated package files are written.",
+    )
+    parser.add_argument(
+        "--llm-analysis",
+        action="store_true",
+        help="Invoke the optional Anthropic semantic analysis pass when ANTHROPIC_API_KEY is set.",
+    )
+    parser.add_argument(
+        "--anthropic-model",
+        default=os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+        help="Anthropic model name used with --llm-analysis.",
     )
     return parser.parse_args()
 
@@ -658,18 +1631,18 @@ def main() -> None:
         raise FileNotFoundError(f"Input script not found: {script_path}")
 
     dependency_map_path = GENERATOR_DIR / "dependency_map.yml"
+    source_info = read_source_file(script_path)
 
-    app_config = infer_app_config(script_path, cli_args.target)
-    if cli_args.manifest:
-        manifest_path = Path(cli_args.manifest)
-        if not manifest_path.is_absolute():
-            manifest_path = ROOT / manifest_path
-        app_config = merge_dicts(app_config, load_yaml(manifest_path))
+    app_config = infer_app_config(script_path, source_info, cli_args.target)
+    manifest_path = discover_manifest(cli_args.manifest, script_path)
+    if manifest_path:
+        app_config = merge_dicts(app_config, normalize_manifest_config(load_yaml(manifest_path)))
         app_config.setdefault("inference", {})
         app_config["inference"]["manifest_required"] = False
         app_config["inference"]["manifest_override"] = str(
             manifest_path.relative_to(ROOT) if manifest_path.is_relative_to(ROOT) else manifest_path
         )
+    app_config["target"] = normalize_target(app_config.get("target"))
 
     dependency_map = load_yaml(dependency_map_path)
     output_dir = Path(cli_args.output_dir)
@@ -690,18 +1663,25 @@ def main() -> None:
     output_config = outputs.get("output", {})
     output_description = output_config.get("description", "Generated output directory.")
 
-    entrypoint_src = script_path
     entrypoint_dst = output_dir / entrypoint
 
-    detected_imports = detect_imports(entrypoint_src)
-    implicit_dependencies = detect_implicit_dependencies(entrypoint_src, detected_imports)
+    detected_imports = detect_imports_from_source(source_info["source"])
+    implicit_dependencies = detect_implicit_dependencies_from_source(source_info["source"], detected_imports)
+    if target_includes(app_config["target"], "dps"):
+        implicit_dependencies.setdefault("conda", [])
+        if "pyyaml" not in implicit_dependencies["conda"]:
+            implicit_dependencies["conda"].append("pyyaml")
+            implicit_dependencies["conda"].sort()
     dependencies = resolve_dependencies(
         detected_imports,
         dependency_map,
         app_config,
         implicit_dependencies,
     )
-    cwl_file_name = f"{name}.cwl"
+    analysis = analyze_source(source_info, detected_imports, inputs)
+    llm_prompt = build_llm_prompt(app_config, analysis)
+    llm_analysis = run_llm_analysis(llm_prompt, cli_args.llm_analysis, cli_args.anthropic_model)
+    cwl_file_name = "application.cwl"
 
     context = {
         "name": name,
@@ -715,6 +1695,9 @@ def main() -> None:
         "dependencies_block": build_dependencies_block(dependencies),
         "algorithm_inputs_block": build_algorithm_inputs_block(inputs),
         "cwl_inputs_block": build_cwl_inputs_block(inputs),
+        "cwl_workflow_inputs_block": build_cwl_workflow_inputs_block(inputs),
+        "cwl_workflow_step_inputs_block": build_cwl_workflow_step_inputs_block(inputs),
+        "cwl_file_name": cwl_file_name,
         "ram_min": str(resources.get("ram_min", 8)),
         "cores_min": str(resources.get("cores_min", 2)),
         "outdir_max": str(resources.get("outdir_max", 20)),
@@ -725,17 +1708,23 @@ def main() -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    shutil.copy2(entrypoint_src, entrypoint_dst)
+    materialize_entrypoint(source_info, entrypoint_dst)
 
     generated_files = [entrypoint]
 
     files_to_generate = {
         "run.sh": "run.sh.template",
         "env.yml": "env.yml.template",
-        "algorithm.yml": "algorithm.yml.template",
         "Dockerfile": "Dockerfile.template",
-        cwl_file_name: "commandline.cwl.template",
     }
+
+    if target_includes(app_config["target"], "dps"):
+        files_to_generate["algorithm_config.yaml"] = "algorithm.yml.template"
+        files_to_generate["algorithm.yml"] = "algorithm.yml.template"
+
+    if target_includes(app_config["target"], "ogc"):
+        files_to_generate[cwl_file_name] = "commandline.cwl.template"
+        files_to_generate["workflow.cwl"] = "workflow.cwl.template"
 
     for output_name, template_name in files_to_generate.items():
         rendered = render_template(template_name, context)
@@ -753,11 +1742,38 @@ def main() -> None:
     write_text(output_dir / "requirements.txt", requirements_txt)
     generated_files.append("requirements.txt")
 
+    write_text(output_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
+    generated_files.append("analysis.json")
+
+    write_text(output_dir / "llm_analysis_prompt.json", llm_prompt + "\n")
+    generated_files.append("llm_analysis_prompt.json")
+
+    write_text(output_dir / "stac-input.json", build_stac_input_manifest(app_config, inputs))
+    generated_files.append("stac-input.json")
+
+    write_text(output_dir / "stac-output.json", build_stac_output_manifest(app_config, outputs))
+    generated_files.append("stac-output.json")
+
+    validate_sh = build_validation_script(app_config["target"], cwl_file_name)
+    write_text(output_dir / "validate_package.sh", validate_sh)
+    make_executable(output_dir / "validate_package.sh")
+    generated_files.append("validate_package.sh")
+
+    if target_includes(app_config["target"], "dps"):
+        write_text(output_dir / "register_dps.py", build_dps_registration_script())
+        make_executable(output_dir / "register_dps.py")
+        generated_files.append("register_dps.py")
+
+    if target_includes(app_config["target"], "ogc"):
+        write_text(output_dir / "publish_ogc.py", build_ogc_publish_script())
+        make_executable(output_dir / "publish_ogc.py")
+        generated_files.append("publish_ogc.py")
+
     readme = f"""# {name}
 
-This OGC Application Package was generated from a Python script by the package generator proof of concept.
+This application package was generated from a Python script or notebook by the package generator proof of concept.
 
-The generator can run without an `app.yml` manifest. It infers command-line inputs from `argparse`, detects imports with the Python AST, resolves dependencies, and renders the package files from templates.
+The generator can run without an `app.yaml` manifest, or it can merge a minimal manifest declaring target, schemas, resources, and base container preference. It infers command-line inputs from `argparse` and Papermill-style notebook parameters, detects imports with the Python AST, resolves dependencies, and renders the package files from templates.
 
 ## Entrypoint
 
@@ -769,13 +1785,13 @@ The generator can run without an `app.yml` manifest. It infers command-line inpu
 - `run.sh`
 - `build.sh`
 - `env.yml`
-- `algorithm.yml`
-- `{cwl_file_name}`
 - `requirements.txt`
+- `analysis.json`
+- `llm_analysis_prompt.json`
 - `{entrypoint}`
 - `report.md`
 
-Review all generated files before OGC execution or MAAP DPS registration.
+Review `report.md` and `analysis.json` before OGC execution, MAAP DPS registration, or registry publication.
 
 ## Conda environment location
 
@@ -790,6 +1806,13 @@ user-writable path:
 For a quick ADE/Jupyter smoke test, pass a small `--bbox` and `--bbox_crs`.
 Running without a bbox can try to write the full granule and may be slow or
 memory-heavy.
+
+## Validation and publication
+
+Run `./validate_package.sh` to compile Python, validate CWL when `cwltool` is installed, and build the container when Docker is available.
+
+For DPS registration set `MAAP_API_URL` and `MAAP_API_TOKEN`, then run `./register_dps.py`.
+For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`), then run `./publish_ogc.py`.
 """
 
     write_text(output_dir / "README.md", readme)
@@ -800,6 +1823,8 @@ memory-heavy.
         app_config,
         detected_imports,
         inputs,
+        analysis,
+        llm_analysis,
         implicit_dependencies,
         dependencies,
         generated_files,

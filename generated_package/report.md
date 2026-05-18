@@ -4,7 +4,7 @@
 
 - Algorithm name: `nisar_access_subset`
 - Version: `main`
-- Target: `ogc`
+- Target: `both`
 - Entrypoint: `nisar_access_subset.py`
 - Generation mode: `python_only`
 - Manifest required: `False`
@@ -30,7 +30,7 @@
 
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
-| `access_mode` | `string` | `auto` | Allowed values: auto, s3, https. |
+| `access_mode` | `string` | `auto` | Prefer s3 in DPS, or https when non-interactive Earthdata credentials are available. |
 | `https_href` | `string` | `` |  |
 | `s3_href` | `string` | `` |  |
 | `short_name` | `string` | `NISAR_L2_GCOV_BETA_V1` |  |
@@ -41,9 +41,24 @@
 | `vars` | `string` | `HHHH` |  |
 | `x_path` | `string` | `/science/LSAR/GCOV/grids/frequencyA/xCoordinates` |  |
 | `y_path` | `string` | `/science/LSAR/GCOV/grids/frequencyA/yCoordinates` |  |
-| `bbox` | `string` | `` |  |
-| `bbox_crs` | `string` | `` |  |
+| `bbox` | `string` | `` | Optional minx,miny,maxx,maxy subset bounding box. |
+| `bbox_crs` | `string` | `` | CRS for bbox, for example EPSG:32633. |
 | `out_name` | `string` | `nisar_subset.zarr` |  |
+
+## Static Analysis
+
+- Findings: none
+- Source kind: `script` with `1` code unit(s)
+- Data access:
+  - `s3`: 2 signal(s)
+  - `stac`: 0 signal(s)
+  - `cmr`: 2 signal(s)
+  - `local`: 0 signal(s)
+
+## LLM-Assisted Analysis
+
+- Status: `not_requested`
+- Message: Pass --llm-analysis and set ANTHROPIC_API_KEY to run the optional semantic analysis pass.
 
 ## Implicit Dependencies
 
@@ -52,6 +67,7 @@
 - conda: `fsspec`
 - conda: `h5netcdf`
 - conda: `numcodecs<0.16`
+- conda: `pyyaml`
 - conda: `requests`
 - conda: `zarr<3`
 
@@ -67,6 +83,7 @@
 - conda: `numcodecs<0.16`
 - conda: `numpy`
 - conda: `pyproj`
+- conda: `pyyaml`
 - conda: `requests`
 - conda: `s3fs`
 - conda: `xarray`
@@ -79,11 +96,20 @@
 - `nisar_access_subset.py`
 - `run.sh`
 - `env.yml`
-- `algorithm.yml`
 - `Dockerfile`
-- `nisar_access_subset.cwl`
+- `algorithm_config.yaml`
+- `algorithm.yml`
+- `application.cwl`
+- `workflow.cwl`
 - `build.sh`
 - `requirements.txt`
+- `analysis.json`
+- `llm_analysis_prompt.json`
+- `stac-input.json`
+- `stac-output.json`
+- `validate_package.sh`
+- `register_dps.py`
+- `publish_ogc.py`
 - `README.md`
 - `report.md`
 
@@ -93,12 +119,15 @@
 {
   "name": "nisar_access_subset",
   "version": "main",
-  "target": "ogc",
+  "target": "both",
   "entrypoint": "nisar_access_subset.py",
   "inference": {
     "mode": "python_only",
     "source": "input/nisar_access_subset.py",
-    "manifest_required": false
+    "source_kind": "script",
+    "parameters_cell_index": null,
+    "manifest_required": false,
+    "manifest_override": "input/app.yaml"
   },
   "detected_imports": [
     "argparse",
@@ -120,87 +149,145 @@
     "access_mode": {
       "type": "string",
       "default": "auto",
-      "description": "Allowed values: auto, s3, https.",
-      "inferred": true
+      "description": "Prefer s3 in DPS, or https when non-interactive Earthdata credentials are available.",
+      "inferred": true,
+      "source": "argparse"
     },
     "https_href": {
       "type": "string",
       "default": "",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "s3_href": {
       "type": "string",
       "default": "",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "short_name": {
       "type": "string",
       "default": "NISAR_L2_GCOV_BETA_V1",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "count": {
       "type": "integer",
       "default": "10",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "granule_index": {
       "type": "integer",
       "default": "0",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "asf_s3_creds_url": {
       "type": "string",
       "default": "https://nisar.asf.earthdatacloud.nasa.gov/s3credentials",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "group": {
       "type": "string",
       "default": "/science/LSAR/GCOV/grids/frequencyA",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "vars": {
       "type": "string",
       "default": "HHHH",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "x_path": {
       "type": "string",
       "default": "/science/LSAR/GCOV/grids/frequencyA/xCoordinates",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "y_path": {
       "type": "string",
       "default": "/science/LSAR/GCOV/grids/frequencyA/yCoordinates",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     },
     "bbox": {
       "type": "string",
       "default": "",
-      "description": "",
-      "inferred": true
+      "description": "Optional minx,miny,maxx,maxy subset bounding box.",
+      "inferred": true,
+      "source": "argparse"
     },
     "bbox_crs": {
       "type": "string",
       "default": "",
-      "description": "",
-      "inferred": true
+      "description": "CRS for bbox, for example EPSG:32633.",
+      "inferred": true,
+      "source": "argparse"
     },
     "out_name": {
       "type": "string",
       "default": "nisar_subset.zarr",
       "description": "",
-      "inferred": true
+      "inferred": true,
+      "source": "argparse"
     }
+  },
+  "analysis": {
+    "source_kind": "script",
+    "code_cell_count": 1,
+    "parameters_cell_index": null,
+    "data_access": {
+      "s3": [
+        {
+          "evidence": "import s3fs",
+          "location": "imports"
+        },
+        {
+          "evidence": "s3fs.S3FileSystem",
+          "location": "line 375"
+        }
+      ],
+      "stac": [],
+      "cmr": [
+        {
+          "evidence": "import earthaccess",
+          "location": "imports"
+        },
+        {
+          "evidence": "earthaccess.search_data",
+          "location": "line 159"
+        }
+      ],
+      "local": []
+    },
+    "issues": [],
+    "parse_errors": [],
+    "lint_tools": {
+      "executed": [],
+      "recommended": [
+        "ruff",
+        "flake8",
+        "mypy"
+      ],
+      "note": "Install these tools in CI to enforce the same reproducibility checks automatically."
+    }
+  },
+  "llm_analysis": {
+    "status": "not_requested",
+    "message": "Pass --llm-analysis and set ANTHROPIC_API_KEY to run the optional semantic analysis pass."
   },
   "implicit_dependencies": {
     "conda": [
@@ -209,6 +296,7 @@
       "fsspec",
       "h5netcdf",
       "numcodecs<0.16",
+      "pyyaml",
       "requests",
       "zarr<3"
     ],
@@ -226,6 +314,7 @@
       "numcodecs<0.16",
       "numpy",
       "pyproj",
+      "pyyaml",
       "requests",
       "s3fs",
       "xarray",
@@ -240,11 +329,20 @@
     "nisar_access_subset.py",
     "run.sh",
     "env.yml",
-    "algorithm.yml",
     "Dockerfile",
-    "nisar_access_subset.cwl",
+    "algorithm_config.yaml",
+    "algorithm.yml",
+    "application.cwl",
+    "workflow.cwl",
     "build.sh",
     "requirements.txt",
+    "analysis.json",
+    "llm_analysis_prompt.json",
+    "stac-input.json",
+    "stac-output.json",
+    "validate_package.sh",
+    "register_dps.py",
+    "publish_ogc.py",
     "README.md",
     "report.md"
   ],

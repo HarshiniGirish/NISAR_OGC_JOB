@@ -1,0 +1,16 @@
+{
+  "type": "FeatureCollection",
+  "features": [],
+  "links": [],
+  "metadata": {
+    "application": "nisar_access_subset",
+    "role": "expected-output-manifest",
+    "output_schema": {
+      "output": {
+        "type": "directory",
+        "path": "output",
+        "description": "Output directory containing the generated Zarr store and manifest.json."
+      }
+    }
+  }
+}

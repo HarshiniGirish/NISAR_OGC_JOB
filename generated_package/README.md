@@ -1,8 +1,8 @@
 # nisar_access_subset
 
-This OGC Application Package was generated from a Python script by the package generator proof of concept.
+This application package was generated from a Python script or notebook by the package generator proof of concept.
 
-The generator can run without an `app.yml` manifest. It infers command-line inputs from `argparse`, detects imports with the Python AST, resolves dependencies, and renders the package files from templates.
+The generator can run without an `app.yaml` manifest, or it can merge a minimal manifest declaring target, schemas, resources, and base container preference. It infers command-line inputs from `argparse` and Papermill-style notebook parameters, detects imports with the Python AST, resolves dependencies, and renders the package files from templates.
 
 ## Entrypoint
 
@@ -14,13 +14,13 @@ The generator can run without an `app.yml` manifest. It infers command-line inpu
 - `run.sh`
 - `build.sh`
 - `env.yml`
-- `algorithm.yml`
-- `nisar_access_subset.cwl`
 - `requirements.txt`
+- `analysis.json`
+- `llm_analysis_prompt.json`
 - `nisar_access_subset.py`
 - `report.md`
 
-Review all generated files before OGC execution or MAAP DPS registration.
+Review `report.md` and `analysis.json` before OGC execution, MAAP DPS registration, or registry publication.
 
 ## Conda environment location
 
@@ -35,3 +35,10 @@ user-writable path:
 For a quick ADE/Jupyter smoke test, pass a small `--bbox` and `--bbox_crs`.
 Running without a bbox can try to write the full granule and may be slow or
 memory-heavy.
+
+## Validation and publication
+
+Run `./validate_package.sh` to compile Python, validate CWL when `cwltool` is installed, and build the container when Docker is available.
+
+For DPS registration set `MAAP_API_URL` and `MAAP_API_TOKEN`, then run `./register_dps.py`.
+For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`), then run `./publish_ogc.py`.

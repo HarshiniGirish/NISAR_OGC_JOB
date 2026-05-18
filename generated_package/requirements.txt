@@ -8,6 +8,7 @@ maap-py
 numcodecs<0.16
 numpy
 pyproj
+pyyaml
 requests
 s3fs
 xarray

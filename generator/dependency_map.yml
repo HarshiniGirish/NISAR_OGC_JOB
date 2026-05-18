@@ -31,6 +31,8 @@ fsspec: fsspec
 s3fs: s3fs
 requests: requests
 earthaccess: earthaccess
+pystac: pystac
+pystac_client: pystac-client
 pyproj: pyproj
 boto3: boto3
 botocore: botocore
@@ -38,3 +40,4 @@ maap: maap-py
 rasterio: rasterio
 geopandas: geopandas
 shapely: shapely
+yaml: pyyaml

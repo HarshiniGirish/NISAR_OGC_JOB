@@ -14,6 +14,8 @@ maps them to installable packages using `dependency_map.yml`.
 | `s3fs` | `s3fs` | S3 filesystem access; also adds `fsspec`, `boto3`, and `botocore`. |
 | `requests` | `requests` | HTTP requests. |
 | `earthaccess` | `earthaccess` | Earthdata search and authentication; also adds `requests`. |
+| `pystac` | `pystac` | STAC object model support. |
+| `pystac_client` | `pystac-client` | STAC API client support. |
 | `pyproj` | `pyproj` | CRS parsing and bbox transformation. |
 | `boto3` | `boto3` | AWS SDK used by S3 workflows. |
 | `botocore` | `botocore` | Low-level AWS dependency used with S3 workflows. |
@@ -21,6 +23,7 @@ maps them to installable packages using `dependency_map.yml`.
 | `rasterio` | `rasterio` | Raster/geospatial IO support. |
 | `geopandas` | `geopandas` | Vector geospatial support. |
 | `shapely` | `shapely` | Geometry operations. |
+| `yaml` | `pyyaml` | YAML parsing for generated registration helpers. |
 
 Standard library imports such as `argparse`, `json`, `os`, `pathlib`,
 `shutil`, `sys`, `tempfile`, and `typing` map to `null` in
