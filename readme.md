@@ -5,16 +5,16 @@ This repository is a proof of concept for the assessment idea:
 > Take a user Python script and automatically generate the files needed for an
 > OGC Application Package / MAAP DPS-style package.
 
-The default workflow can run directly from a script/notebook, and it also
-auto-discovers a minimal `input/app.yaml` that declares target intent, schema
-overrides, resources, and base container preference.
+The default workflow can run directly from a script/notebook. It infers a
+minimal application manifest and writes it as `app.yaml` inside the generated
+package.
 
 Generated output directories such as `generated_package/`,
 `generated_opera_package/`, and `generated_mycat_package/` are intentionally not
 stored in git. The point of the experiment is the generator in
 `generator/generate_package.py`: point it at a new science script or notebook,
-optionally provide that job's `app.yaml`, and it will emit a first-draft DPS/OGC
-package plus static-analysis guidance.
+optionally provide an override manifest, and it will emit a first-draft DPS/OGC
+package plus generated `app.yaml` and static-analysis guidance.
 
 ## Main demo command
 
@@ -38,6 +38,7 @@ generated_package/
 ├── README.md
 ├── algorithm_config.yaml
 ├── algorithm.yml
+├── app.yaml
 ├── analysis.json
 ├── application.cwl
 ├── build.sh
@@ -71,9 +72,10 @@ The generator inspects the Python file and infers:
   notebook magic, undeclared environment variables, and missing seeds
 - DPS, OGC, or combined target metadata
 
-`input/app.yaml` or `input/app.yml` can be used as an optional override. The
-manifest can use `inputs`/`outputs` or the aliases `input_schema`/`output_schema`.
-Valid targets are `dps`, `ogc`, and `both`.
+The generated package includes an inferred `app.yaml`. A hand-written manifest
+is only an optional override; it is not required. Overrides can use
+`inputs`/`outputs` or the aliases `input_schema`/`output_schema`. Valid targets
+are `dps`, `ogc`, and `both`.
 
 ## Useful commands
 
@@ -91,19 +93,19 @@ python3 generator/generate_package.py path/to/user_script.py --target both --out
 ```
 
 Generate from an executable shell/`.run` entrypoint. For non-Python entrypoints,
-declare inputs in `app.yaml` because argparse inference is not available:
+the generator still creates the wrapper files; add an optional manifest only if
+you need typed input metadata that cannot be inferred from the script:
 
 ```bash
 python3 generator/generate_package.py path/to/MyCatODT.run \
-  --manifest path/to/app.yaml \
   --target both \
   --output-dir generated_mycat_package
 ```
 
-Use an optional manifest override:
+Use an optional manifest override only when you need to force metadata:
 
 ```bash
-python3 generator/generate_package.py input/nisar_access_subset.py --manifest input/app.yaml
+python3 generator/generate_package.py input/nisar_access_subset.py --manifest path/to/app.yaml
 ```
 
 Generate from a notebook with Papermill-style parameters:
@@ -127,8 +129,6 @@ OPERA Surface Displacement tutorial:
 
 ```bash
 python3 generator/generate_package.py input/opera_access_structure.py \
-  --manifest input/app_opera.yaml \
-  --target both \
   --output-dir generated_opera_package
 ```
 
@@ -143,7 +143,7 @@ cd generated_opera_package
 The OPERA example also defaults `--idx-window` to `0:1024,0:1024`, so plain
 `./run.sh` starts with a small subset unless you override the window.
 
-`input/app_opera.yaml` is prefilled with this OPERA DISP-S1 granule:
+The OPERA Python file is prefilled with this OPERA DISP-S1 granule:
 
 ```text
 OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z
@@ -241,7 +241,6 @@ export EARTHDATA_PASSWORD="your_password"
 ## Key files
 
 - `input/nisar_access_subset.py` - example user science code
-- `input/app.yaml` - minimal target/schema/resource/base-container manifest
 - `generator/generate_package.py` - Python-only package generator
 - `generator/dependency_map.yml` - import-to-package mapping
 - `generator/DEPENDENCY_MAPPING.md` - human-readable dependency table
