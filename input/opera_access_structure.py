@@ -32,6 +32,14 @@ DEFAULT_S3_URL = (
     "20251013T134214Z_v1.0_20260310T213850Z.nc"
 )
 ASF_S3_CREDENTIALS_URL = "https://cumulus.asf.alaska.edu/s3credentials"
+APP_NAME = "opera_water_mask_to_cog"
+APP_VERSION = "ogc"
+APP_TARGET = "both"
+APP_DESCRIPTION = "Export an OPERA DISP-S1 water_mask subset as a Cloud Optimized GeoTIFF."
+APP_BASE_CONTAINER = "mas.maap-project.org/root/maap-workspaces/base_images/pangeo:v4.1.1"
+APP_RAM_MIN = 16
+APP_CORES_MIN = 2
+APP_OUTDIR_MAX = 20
 
 
 def parse_args() -> argparse.Namespace:

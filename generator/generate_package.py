@@ -26,8 +26,8 @@ OUTPUT_DIR = ROOT / "generated_package"
 PIP_ONLY_PACKAGES = {"maap-py"}
 DEFAULT_SCRIPT_PATH = INPUT_DIR / "nisar_access_subset.py"
 DEFAULT_BASE_CONTAINER = "mas.maap-project.org/root/maap-workspaces/custom_images/maap_base:v5.0.0"
-DEFAULT_TARGET = "ogc"
-DEFAULT_MANIFEST_NAMES = ("app.yaml", "app.yml")
+DEFAULT_PANGEO_CONTAINER = "mas.maap-project.org/root/maap-workspaces/base_images/pangeo:v4.1.1"
+DEFAULT_TARGET = "both"
 TARGET_ALIASES = {"ogc_dps": "both", "ogc-dps": "both"}
 EXCLUDED_RUNTIME_INPUTS = {"out_dir", "output_dir", "dest", "outdir"}
 PYTHON_SOURCE_SUFFIXES = {".py"}
@@ -187,12 +187,6 @@ def discover_manifest(cli_manifest: str, source_path: Path) -> Path | None:
         if not manifest_path.is_absolute():
             manifest_path = ROOT / manifest_path
         return manifest_path.resolve()
-
-    candidates = [source_path.parent / name for name in DEFAULT_MANIFEST_NAMES]
-    candidates.extend(INPUT_DIR / name for name in DEFAULT_MANIFEST_NAMES)
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
     return None
 
 
@@ -233,6 +227,17 @@ def normalize_target(value: str | None) -> str:
 def target_includes(target: str, requested: str) -> bool:
     normalized = normalize_target(target)
     return normalized == "both" or normalized == requested
+
+
+def infer_base_container(detected_imports: list[str], current_base_container: str) -> str:
+    if current_base_container != DEFAULT_BASE_CONTAINER:
+        return current_base_container
+
+    pangeo_signals = {"dask", "geopandas", "rasterio", "rioxarray"}
+    if pangeo_signals.intersection(detected_imports):
+        return DEFAULT_PANGEO_CONTAINER
+
+    return current_base_container
 
 
 def source_label(path: Path) -> str:
@@ -629,6 +634,16 @@ def infer_inputs(source_info: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return inputs
 
 
+def collect_source_metadata(source_info: dict[str, Any]) -> dict[str, Any]:
+    if not is_python_source(source_info):
+        return {}
+    try:
+        tree = ast.parse(source_info["source"])
+    except SyntaxError:
+        return {}
+    return collect_module_constants(tree)
+
+
 def infer_runtime_config(source_info: dict[str, Any]) -> dict[str, str]:
     runtime_type = "python" if is_python_source(source_info) else "executable"
     output_argument = ""
@@ -667,22 +682,25 @@ def infer_runtime_config(source_info: dict[str, Any]) -> dict[str, str]:
 
 
 def infer_app_config(source_path: Path, source_info: dict[str, Any], target: str) -> dict[str, Any]:
-    name = slugify_name(source_path.stem)
+    metadata = collect_source_metadata(source_info)
+    name = slugify_name(str(metadata.get("APP_NAME") or source_path.stem))
     entrypoint_suffix = ".py" if source_info["kind"] == "notebook" else source_path.suffix
     entrypoint = f"{name}{entrypoint_suffix}"
     return {
         "name": name,
-        "version": "main",
-        "target": normalize_target(target),
+        "version": str(metadata.get("APP_VERSION") or "main"),
+        "target": normalize_target(str(metadata.get("APP_TARGET") or target)),
         "entrypoint": entrypoint,
-        "description": infer_description_from_source(source_info["source"], source_path),
+        "description": str(
+            metadata.get("APP_DESCRIPTION") or infer_description_from_source(source_info["source"], source_path)
+        ),
         "repository_url": infer_repository_url(),
-        "base_container": DEFAULT_BASE_CONTAINER,
+        "base_container": str(metadata.get("APP_BASE_CONTAINER") or DEFAULT_BASE_CONTAINER),
         "runtime": infer_runtime_config(source_info),
         "resources": {
-            "ram_min": 8,
-            "cores_min": 2,
-            "outdir_max": 20,
+            "ram_min": int(metadata.get("APP_RAM_MIN") or 8),
+            "cores_min": int(metadata.get("APP_CORES_MIN") or 2),
+            "outdir_max": int(metadata.get("APP_OUTDIR_MAX") or 20),
         },
         "inputs": infer_inputs(source_info),
         "outputs": {
@@ -958,6 +976,24 @@ def build_stac_output_manifest(app_config: dict[str, Any], outputs: dict[str, An
         },
     }
     return json.dumps(manifest, indent=2) + "\n"
+
+
+def build_generated_app_manifest(app_config: dict[str, Any]) -> str:
+    manifest = {
+        "target": app_config.get("target"),
+        "name": app_config.get("name"),
+        "version": app_config.get("version"),
+        "description": app_config.get("description", ""),
+        "repository_url": app_config.get("repository_url", ""),
+        "base_container_preference": app_config.get("base_container", ""),
+        "runtime": app_config.get("runtime", {}),
+        "resources": app_config.get("resources", {}),
+        "input_schema": app_config.get("inputs", {}),
+        "output_schema": app_config.get("outputs", {}),
+        "dependencies": app_config.get("dependencies", {}),
+        "inference": app_config.get("inference", {}),
+    }
+    return yaml.safe_dump(manifest, sort_keys=False)
 
 
 def build_runtime_output_arg(output_argument: str) -> str:
@@ -1902,7 +1938,7 @@ def parse_cli_args() -> argparse.Namespace:
     parser.add_argument(
         "--manifest",
         default="",
-        help="Optional app.yaml/app.yml override. Auto-discovers input/app.yaml when omitted.",
+        help="Optional app.yaml/app.yml metadata override. Not required; generated app.yaml is always emitted.",
     )
     parser.add_argument(
         "--target",
@@ -1979,7 +2015,6 @@ def main() -> None:
     entrypoint = Path(app_config.get("entrypoint") or script_path.name).name
     description = app_config.get("description", "")
     repository_url = app_config.get("repository_url", "")
-    base_container = app_config.get("base_container", "")
     inputs = app_config.get("inputs", {})
     outputs = app_config.get("outputs", {})
     resources = app_config.get("resources", {})
@@ -1992,6 +2027,10 @@ def main() -> None:
     entrypoint_dst = output_dir / entrypoint
 
     detected_imports = detect_imports_from_source(source_info["source"])
+    app_config["base_container"] = infer_base_container(
+        detected_imports, app_config.get("base_container", DEFAULT_BASE_CONTAINER)
+    )
+    base_container = app_config.get("base_container", "")
     implicit_dependencies = detect_implicit_dependencies_from_source(source_info["source"], detected_imports)
     if target_includes(app_config["target"], "dps"):
         implicit_dependencies.setdefault("conda", [])
@@ -2077,6 +2116,9 @@ def main() -> None:
     write_text(output_dir / "requirements.txt", requirements_txt)
     generated_files.append("requirements.txt")
 
+    write_text(output_dir / "app.yaml", build_generated_app_manifest(app_config))
+    generated_files.append("app.yaml")
+
     write_text(output_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
     generated_files.append("analysis.json")
 
@@ -2123,6 +2165,7 @@ Runtime type: `{runtime_config.get('type', 'python')}`.
 - `build.sh`
 - `env.yml`
 - `requirements.txt`
+- `app.yaml`
 - `analysis.json`
 - `llm_analysis_prompt.json`
 - `{entrypoint}`

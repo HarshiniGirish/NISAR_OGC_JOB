@@ -109,6 +109,35 @@ class GeneratePackageTests(unittest.TestCase):
         self.assertIn("SHORT_NAME", normalized["inputs"])
         self.assertEqual(normalized["outputs"]["out"]["type"], "Directory")
 
+    def test_generated_app_manifest_contains_inferred_inputs(self) -> None:
+        app_config = {
+            "target": "both",
+            "name": "demo",
+            "version": "main",
+            "description": "demo app",
+            "repository_url": "",
+            "base_container": "example/base:latest",
+            "runtime": {"type": "python", "output_argument": "--dest"},
+            "resources": {"ram_min": 8, "cores_min": 2, "outdir_max": 20},
+            "inputs": {
+                "short_name": {
+                    "type": "string",
+                    "default": "OPERA_L3_DISP-S1_V1",
+                    "description": "CMR short name",
+                    "cli_option": "--short-name",
+                }
+            },
+            "outputs": {"output": {"type": "directory", "path": "output"}},
+            "dependencies": {"conda": ["python=3.11"], "pip": []},
+            "inference": {"mode": "python_only", "manifest_required": False},
+        }
+
+        manifest = gen.yaml.safe_load(gen.build_generated_app_manifest(app_config))
+
+        self.assertEqual(manifest["name"], "demo")
+        self.assertEqual(manifest["input_schema"]["short_name"]["cli_option"], "--short-name")
+        self.assertEqual(manifest["runtime"]["output_argument"], "--dest")
+
     def test_openai_llm_analysis_skips_without_key(self) -> None:
         old_key = os.environ.pop("OPENAI_API_KEY", None)
         try:
