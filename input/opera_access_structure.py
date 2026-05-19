@@ -19,6 +19,20 @@ from s3fs import S3FileSystem
 from shapely.geometry import box
 from shapely.ops import transform as shp_transform
 
+DEFAULT_TEMPORAL = "2025-10-01T13:42:14Z,2025-10-13T13:42:14Z"
+DEFAULT_GRANULE_UR = (
+    "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_"
+    "20251013T134214Z_v1.0_20260310T213850Z"
+)
+DEFAULT_S3_URL = (
+    "s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/"
+    "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_"
+    "20251013T134214Z_v1.0_20260310T213850Z/"
+    "OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_"
+    "20251013T134214Z_v1.0_20260310T213850Z.nc"
+)
+ASF_S3_CREDENTIALS_URL = "https://cumulus.asf.alaska.edu/s3credentials"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -27,12 +41,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--short-name", default="OPERA_L3_DISP-S1_V1", help="CMR short name")
     parser.add_argument(
         "--temporal",
-        default=None,
+        default=DEFAULT_TEMPORAL,
         help="Temporal range 'YYYY-MM-DDTHH:MM:SSZ,YYYY-MM-DDTHH:MM:SSZ'",
     )
     parser.add_argument("--bbox", default=None, help="WGS84 bbox 'minx,miny,maxx,maxy'")
     parser.add_argument("--limit", type=int, default=10, help="Max granules to search")
-    parser.add_argument("--granule-ur", default=None, help="Optional fixed GranuleUR")
+    parser.add_argument("--granule-ur", default=DEFAULT_GRANULE_UR, help="Optional fixed GranuleUR")
     parser.add_argument("--tile", type=int, default=256, help="COG tile size")
     parser.add_argument("--compress", default="DEFLATE", help="COG compression")
     parser.add_argument(
@@ -51,7 +65,7 @@ def parse_args() -> argparse.Namespace:
         default="0:1024,0:1024",
         help="Index window 'y0:y1,x0:x1'. Defaults to a small smoke-test subset.",
     )
-    parser.add_argument("--s3-url", default=None, help="Direct s3:// path to a .nc granule")
+    parser.add_argument("--s3-url", default=DEFAULT_S3_URL, help="Direct s3:// path to a .nc granule")
     args, _ = parser.parse_known_args()
 
     for attr in ("temporal", "bbox", "granule_ur", "s3_url", "dest"):
@@ -133,8 +147,31 @@ def _first_s3_from_umm(umm_item) -> Optional[str]:
     return None
 
 
+def maap_search_collection(maap: MAAP, **kwargs):
+    if hasattr(maap, "search_collection"):
+        return maap.search_collection(**kwargs)
+    return maap.searchCollection(**kwargs)
+
+
+def maap_search_granule(maap: MAAP, **kwargs):
+    if hasattr(maap, "search_granule"):
+        return maap.search_granule(**kwargs)
+    return maap.searchGranule(**kwargs)
+
+
+def get_earthdata_s3_credentials(maap: MAAP, credentials_url: str = ASF_S3_CREDENTIALS_URL) -> dict:
+    if hasattr(maap, "aws") and hasattr(maap.aws, "earthdata_s3_credentials"):
+        return maap.aws.earthdata_s3_credentials(credentials_url)
+    raise RuntimeError(
+        "This MAAP client does not expose aws.earthdata_s3_credentials. "
+        "Run inside MAAP ADE or provide an environment with temporary AWS credentials."
+    )
+
+
 def pick_granule_url(maap: MAAP, short_name, temporal, bbox_value, limit, fixed_ur=None):
-    collection = maap.searchCollection(cmr_host="cmr.earthdata.nasa.gov", short_name=short_name)
+    collection = maap_search_collection(
+        maap, cmr_host="cmr.earthdata.nasa.gov", short_name=short_name
+    )
     if not collection:
         raise RuntimeError(f"No collection found for {short_name}")
     concept_id = collection[0].get("concept-id")
@@ -146,7 +183,7 @@ def pick_granule_url(maap: MAAP, short_name, temporal, bbox_value, limit, fixed_
         query["bounding_box"] = bbox_value
 
     try:
-        results = maap.searchGranule(limit=limit, **query)
+        results = maap_search_granule(maap, limit=limit, **query)
     except ET.ParseError as exc:
         params = {
             "collection_concept_id": concept_id,
@@ -178,7 +215,7 @@ def pick_granule_url(maap: MAAP, short_name, temporal, bbox_value, limit, fixed_
         s3_url = _first_s3_from_umm(items[0])
         if not s3_url:
             raise RuntimeError("Could not find s3:// URL in UMM-JSON item.")
-        creds = maap.aws.earthdata_s3_credentials("https://cumulus.asf.alaska.edu/s3credentials")
+        creds = get_earthdata_s3_credentials(maap)
         return s3_url, {"granule": items[0], "aws_creds": creds}
 
     if not results:
@@ -226,7 +263,7 @@ def pick_granule_url(maap: MAAP, short_name, temporal, bbox_value, limit, fixed_
             f"SDK results XML head ({len(response.text[:1000])} chars):\n{response.text[:1000]}"
         )
 
-    creds = maap.aws.earthdata_s3_credentials("https://cumulus.asf.alaska.edu/s3credentials")
+    creds = get_earthdata_s3_credentials(maap)
     return s3_url, {"granule": picked, "aws_creds": creds}
 
 
@@ -328,9 +365,7 @@ def main() -> None:
         url = args.s3_url
         meta = {
             "granule": None,
-            "aws_creds": maap.aws.earthdata_s3_credentials(
-                "https://cumulus.asf.alaska.edu/s3credentials"
-            ),
+            "aws_creds": get_earthdata_s3_credentials(maap),
         }
     else:
         url, meta = pick_granule_url(
