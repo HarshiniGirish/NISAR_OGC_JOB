@@ -14,6 +14,7 @@ import pyproj
 import requests
 import rioxarray  # registers .rio
 import xarray as xr
+import earthaccess
 from maap.maap import MAAP
 from s3fs import S3FileSystem
 from shapely.geometry import box
@@ -167,12 +168,56 @@ def maap_search_granule(maap: MAAP, **kwargs):
     return maap.searchGranule(**kwargs)
 
 
+def normalize_s3_credentials(creds: dict) -> dict:
+    key = creds.get("accessKeyId") or creds.get("AccessKeyId") or creds.get("aws_access_key_id")
+    secret = (
+        creds.get("secretAccessKey")
+        or creds.get("SecretAccessKey")
+        or creds.get("aws_secret_access_key")
+    )
+    token = creds.get("sessionToken") or creds.get("SessionToken") or creds.get("aws_session_token")
+    if not key or not secret or not token:
+        raise RuntimeError("S3 credential response did not include key, secret, and token.")
+    return {"accessKeyId": key, "secretAccessKey": secret, "sessionToken": token}
+
+
+def get_earthaccess_auth():
+    if os.environ.get("EARTHDATA_USERNAME") and os.environ.get("EARTHDATA_PASSWORD"):
+        return earthaccess.login(strategy="environment")
+    netrc_path = os.environ.get("NETRC") or os.path.expanduser("~/.netrc")
+    if os.path.exists(netrc_path):
+        return earthaccess.login()
+    return earthaccess.login(strategy="netrc")
+
+
 def get_earthdata_s3_credentials(maap: MAAP, credentials_url: str = ASF_S3_CREDENTIALS_URL) -> dict:
+    env_key = os.environ.get("AWS_ACCESS_KEY_ID")
+    env_secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    env_token = os.environ.get("AWS_SESSION_TOKEN")
+    if env_key and env_secret and env_token:
+        print("USING_S3_CREDS_SOURCE: environment")
+        return {"accessKeyId": env_key, "secretAccessKey": env_secret, "sessionToken": env_token}
+
     if hasattr(maap, "aws") and hasattr(maap.aws, "earthdata_s3_credentials"):
-        return maap.aws.earthdata_s3_credentials(credentials_url)
+        try:
+            creds = maap.aws.earthdata_s3_credentials(credentials_url)
+            print("USING_S3_CREDS_SOURCE: maap")
+            return normalize_s3_credentials(creds)
+        except Exception as exc:
+            print("MAAP_S3_CREDS_FAILED:", exc)
+
+    try:
+        auth = get_earthaccess_auth()
+        creds = auth.get_s3_credentials(endpoint=credentials_url)
+        print("USING_S3_CREDS_SOURCE: earthaccess")
+        return normalize_s3_credentials(creds)
+    except Exception as exc:
+        print("EARTHACCESS_S3_CREDS_FAILED:", exc)
+
     raise RuntimeError(
-        "This MAAP client does not expose aws.earthdata_s3_credentials. "
-        "Run inside MAAP ADE or provide an environment with temporary AWS credentials."
+        "Unable to obtain temporary S3 credentials. Set AWS_ACCESS_KEY_ID, "
+        "AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN, or configure Earthdata credentials "
+        "with EARTHDATA_USERNAME/EARTHDATA_PASSWORD or ~/.netrc."
     )
 
 
