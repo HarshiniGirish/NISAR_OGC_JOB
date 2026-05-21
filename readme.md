@@ -1,249 +1,279 @@
-# DPS / OGC Application Package Generator
+# NISAR_OGC_JOB: End-to-End Package Generation Workflow
 
-This repository is a proof of concept for the assessment idea:
+## 1. Project Summary
 
-> Take a user Python script and automatically generate the files needed for an
-> OGC Application Package / MAAP DPS-style package.
+This repository tests whether a normal Python science workflow can be analyzed and converted into a deployable MAAP DPS / OGC-style application package.
 
-The default workflow can run directly from a script/notebook. It infers a
-minimal application manifest and writes it as `app.yaml` inside the generated
-package.
+The project starts with an input science script, such as a NISAR GCOV subsetting script. The generator analyzes the script, detects dependencies and runtime inputs, renders package templates, and creates a generated package that can be validated, built, and run.
 
-Generated output directories such as `generated_package/`,
-`generated_opera_package/`, and `generated_mycat_package/` are intentionally not
-stored in git. The point of the experiment is the generator in
-`generator/generate_package.py`: point it at a new science script or notebook,
-optionally provide an override manifest, and it will emit a first-draft DPS/OGC
-package plus generated `app.yaml` and static-analysis guidance.
+OpenAI analysis is optional. It is used only as an additional review layer to identify possible environment, credential, scaling, and reproducibility risks.
 
-## Main demo command
+### End-to-End Package Generation Flow
 
-From the repository root:
+```text
+Input science script
+        ↓
+AST static analysis
+        ↓
+Dependency mapping
+        ↓
+Template rendering
+        ↓
+Generated package
+        ↓
+Validate, build, and run
+```
+
+---
+
+## 2. NISAR Workflow
+
+NISAR is the primary demonstration workflow in this repository.
+
+The input script accesses a NISAR L2 GCOV granule, reads the GCOV HDF5 group, subsets variables such as `HHHH` using a bounding box, and writes a Zarr output plus a `manifest.json` file.
+
+### NISAR Generated Package Runtime Flow
+
+```text
+Export Earthdata credentials
+        ↓
+Run bbox smoke test
+        ↓
+S3 access with fallback
+        ↓
+Read GCOV HDF5 group
+        ↓
+Subset HHHH by bbox
+        ↓
+Write Zarr + manifest
+```
+
+---
+
+## 2.1 NISAR Staging Setup
+
+Open the MAAP staging hub:
+
+```text
+https://staging.hub.maap-project.org/
+```
+
+Use the OGC/Pangeo workspace image:
+
+```text
+mas.uat.maap-project.org/root/maap-workspaces/2i2c/pangeo:ogc-v1.0
+```
+
+Clone the repository inside the workspace terminal:
 
 ```bash
+git clone https://github.com/HarshiniGirish/NISAR_OGC_JOB
+cd ~/NISAR_OGC_JOB
+```
+
+---
+
+## 2.2 Generate the NISAR Package
+
+From the repository root, run:
+
+```bash
+cd ~/NISAR_OGC_JOB
 python3 generator/generate_package.py
 ```
 
-By default this reads:
-
-```text
-input/nisar_access_subset.py
-```
-
-and creates:
+Expected output is a generated package folder containing files such as:
 
 ```text
 generated_package/
-├── Dockerfile
-├── README.md
-├── algorithm_config.yaml
-├── algorithm.yml
-├── app.yaml
-├── analysis.json
-├── application.cwl
+├── run.sh
 ├── build.sh
 ├── env.yml
-├── llm_analysis_prompt.json
-├── nisar_access_subset.py
-├── publish_ogc.py
-├── register_dps.py
+├── Dockerfile
+├── algorithm.yml
+├── application.cwl
+├── workflow.cwl
+├── analysis.json
 ├── report.md
-├── requirements.txt
-├── run.sh
-├── stac-input.json
-├── stac-output.json
-├── validate_package.sh
-└── workflow.cwl
+└── README.md
 ```
 
-## What is inferred from the Python file?
+---
 
-The generator inspects the Python file and infers:
+## 2.3 Export Credentials for NISAR Testing
 
-- package name from the script/notebook filename
-- description from the module docstring
-- command-line inputs from `argparse.add_argument(...)`
-- notebook parameters from a Papermill-style `parameters` cell
-- imports using Python AST parsing
-- dependencies using `generator/dependency_map.yml`
-- extra implicit dependencies for patterns like `xarray.to_zarr(...)`
-- data-access signals for S3, STAC, CMR, and local files
-- reproducibility/scaling findings such as hardcoded paths, interactive code,
-  notebook magic, undeclared environment variables, and missing seeds
-- DPS, OGC, or combined target metadata
-
-The generated package includes an inferred `app.yaml`. A hand-written manifest
-is only an optional override; it is not required. Overrides can use
-`inputs`/`outputs` or the aliases `input_schema`/`output_schema`. Valid targets
-are `dps`, `ogc`, and `both`.
-
-## Useful commands
-
-Delete and regenerate the package:
-
-```bash
-rm -rf generated_package
-python3 generator/generate_package.py
-```
-
-Generate from a different Python file:
-
-```bash
-python3 generator/generate_package.py path/to/user_script.py --target both --output-dir generated_my_job
-```
-
-Generate from an executable shell/`.run` entrypoint. For non-Python entrypoints,
-the generator still creates the wrapper files; add an optional manifest only if
-you need typed input metadata that cannot be inferred from the script:
-
-```bash
-python3 generator/generate_package.py path/to/MyCatODT.run \
-  --target both \
-  --output-dir generated_mycat_package
-```
-
-Use an optional manifest override only when you need to force metadata:
-
-```bash
-python3 generator/generate_package.py input/nisar_access_subset.py --manifest path/to/app.yaml
-```
-
-Generate from a notebook with Papermill-style parameters:
-
-```bash
-python3 generator/generate_package.py path/to/notebook.ipynb --target both
-```
-
-Generate from another MAAP-style project, such as the OPERA OGC branch, after
-cloning or downloading it locally:
-
-```bash
-python3 generator/generate_package.py ../OPERA_DPS_JOB/water_mask_to_cog.py \
-  --manifest ../OPERA_DPS_JOB/algorithm_ogc.yml \
-  --target both \
-  --output-dir generated_opera_package
-```
-
-This repository also includes a local OPERA access example derived from the MAAP
-OPERA Surface Displacement tutorial:
-
-```bash
-python3 generator/generate_package.py input/opera_access_structure.py \
-  --output-dir generated_opera_package
-```
-
-For a small OPERA smoke test, prefer an index window or direct S3 URL instead of
-a broad collection search:
-
-```bash
-cd generated_opera_package
-./run.sh --idx-window "0:1024,0:1024"
-```
-
-The OPERA example also defaults `--idx-window` to `0:1024,0:1024`, so plain
-`./run.sh` starts with a small subset unless you override the window.
-
-The OPERA Python file is prefilled with this OPERA DISP-S1 granule:
-
-```text
-OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z
-```
-
-and its direct S3 NetCDF URL:
-
-```text
-s3://asf-cumulus-prod-opera-products/OPERA_L3_DISP-S1_V1/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z/OPERA_L3_DISP-S1_IW_F46287_VV_20251001T134214Z_20251013T134214Z_v1.0_20260310T213850Z.nc
-```
-
-Legacy MAAP `algorithm.yml`/`algorithm_ogc.yml` files are accepted as metadata
-overrides, but a small app-specific `app.yaml` is cleaner when you want exact
-input names and defaults for a new project.
-
-The generator preserves argparse's real CLI options in CWL bindings. For
-example, a Python option declared as `--short-name` remains `--short-name`
-instead of being rewritten to `--short_name`. It also detects common output
-arguments such as `--out_dir`, `--output-dir`, and `--dest` so `run.sh` can pass
-the package output directory without assuming every algorithm has the same
-interface.
-
-Run the optional LLM-assisted semantic analysis pass with ChatGPT/OpenAI:
-
-```bash
-export OPENAI_API_KEY="sk-..."
-python3 generator/generate_package.py --llm-analysis --llm-provider openai
-```
-
-Use a specific OpenAI model if desired:
-
-```bash
-python3 generator/generate_package.py --llm-analysis --llm-provider openai --openai-model gpt-4o-mini
-```
-
-Anthropic/Claude is still supported:
-
-```bash
-ANTHROPIC_API_KEY="..." python3 generator/generate_package.py --llm-analysis --llm-provider anthropic
-```
-
-If you do not want to pay for an API call, skip `--llm-analysis` and paste
-`generated_package/llm_analysis_prompt.json` into ChatGPT manually.
-
-Validate the generated package:
-
-```bash
-cd generated_package
-./validate_package.sh
-```
-
-Build the generated runtime environment:
-
-```bash
-cd generated_package
-./build.sh
-```
-
-In MAAP ADE/Jupyter, `/opt/conda/envs` may not be writable. The generated
-`build.sh` handles this automatically by falling back to:
-
-```text
-$HOME/.conda/envs/nisar_access_subset
-```
-
-You can also choose your own location:
-
-```bash
-CONDA_ENV_PREFIX="$HOME/.conda/envs/nisar_access_subset" ./build.sh
-```
-
-Run the generated package:
-
-```bash
-./run.sh
-```
-
-For a real NISAR smoke test, use Earthdata credentials and pass a small bbox so
-the demo does not write the entire granule:
+Credentials are used only for local testing or smoke testing.
 
 ```bash
 export EARTHDATA_USERNAME="your_username"
 export EARTHDATA_PASSWORD="your_password"
-
-./run.sh \
-  --access_mode https \
-  --https_href "https://nisar.asf.earthdatacloud.nasa.gov/NISAR/NISAR_L2_GCOV_BETA_V1/NISAR_L2_PR_GCOV_002_109_D_063_4005_DHDH_A_20251012T182508_20251012T182531_X05010_N_P_J_001/NISAR_L2_PR_GCOV_002_109_D_063_4005_DHDH_A_20251012T182508_20251012T182531_X05010_N_P_J_001.h5" \
-  --vars "HHHH" \
-  --group "/science/LSAR/GCOV/grids/frequencyA" \
-  --bbox "148325,5392805,158325,5402805" \
-  --bbox_crs "EPSG:32633" \
-  --out_name "nisar_subset.zarr"
 ```
 
-## Key files
+---
 
-- `input/nisar_access_subset.py` - example user science code
-- `generator/generate_package.py` - Python-only package generator
-- `generator/dependency_map.yml` - import-to-package mapping
-- `generator/DEPENDENCY_MAPPING.md` - human-readable dependency table
-- `templates/` - templates used to render generated package files
-- `tests/` - generator tests
+## 2.4 Optional OpenAI Analysis
 
+The OpenAI analysis is optional and is not required for package generation.
+
+The main package is still created by the Python generator using static analysis, dependency mapping, and templates. OpenAI is only used as an additional review step after generation.
+
+```bash
+export OPENAI_API_KEY="your_new_key_here"
+
+python3 generator/generate_package.py input/nisar_access_subset.py \
+  --output-dir generated_package \
+  --llm-analysis \
+  --llm-provider openai
+```
+
+The optional analysis reviews the generated package metadata and report. It can flag issues such as:
+
+```text
+- Hidden environment assumptions
+- Credential handling risks
+- Unsafe defaults
+- Scaling limitations
+- Reproducibility concerns
+```
+
+---
+
+## 2.5 Validate, Build, and Run NISAR
+
+Move into the generated package directory:
+
+```bash
+cd ~/NISAR_OGC_JOB/generated_package
+```
+
+Validate the package:
+
+```bash
+./validate_package.sh
+```
+
+Build the package:
+
+```bash
+./build.sh
+```
+
+Run the NISAR bbox smoke test:
+
+```bash
+./run.sh \
+  --bbox "148325,5392805,158325,5402805" \
+  --bbox_crs "EPSG:32633"
+```
+
+Expected outputs:
+
+| Output checked | Expected result |
+|---|---|
+| Zarr output | `output/nisar_subset.zarr` |
+| Manifest | `output/manifest.json` |
+| Access mode | S3, with Earthaccess fallback if MAAP credentials fail |
+| Success signs | `WROTE_ZARR`, `WROTE_MANIFEST`, `Finished nisar_access_subset` |
+
+The generated output is a subsetted NISAR Zarr data store plus a manifest file that records the source granule, access mode, selected variable, bounding box, and output path.
+
+---
+
+## 3. Repository Structure and Generated Files
+
+| Artifact | User provides it? | Created by generator? | Purpose |
+|---|---:|---:|---|
+| Python science script | Yes | No | Original workflow, such as `nisar_access_subset.py` |
+| `app.yaml` / `app.yml` | Optional | Yes, if absent | Optional manifest for target, resources, base image, and overrides |
+| `algorithm.yml` | No | Yes | Generated DPS metadata |
+| `run.sh` | No | Yes | Wrapper that executes the generated algorithm |
+| `build.sh` | No | Yes | Creates the conda runtime environment |
+| `env.yml` / `requirements.txt` | No | Yes | Created from imports, dependency mapping, and implicit rules |
+| `Dockerfile` | No | Yes | Generated container recipe using the selected base image |
+| `application.cwl` / `workflow.cwl` | No | Yes | Generated OGC/CWL execution support |
+| `analysis.json` / `report.md` | No | Yes | Static-analysis and human-readable feedback artifacts |
+
+---
+
+## 4. What the Generator Does
+
+The generator performs the following steps:
+
+```text
+1. Reads the input Python science script.
+2. Uses AST static analysis to inspect the script without running it.
+3. Extracts imports, runtime arguments, and output patterns.
+4. Maps Python imports to installable dependencies.
+5. Detects implicit dependencies such as Zarr, Numcodecs, Earthaccess, or S3 support.
+6. Renders reusable templates into package files.
+7. Creates a generated package directory.
+8. Optionally runs OpenAI-assisted review.
+9. Produces reports and validation artifacts.
+```
+
+---
+
+## 5. AST Static Analysis
+
+AST stands for Abstract Syntax Tree. It is a structured representation of Python code.
+
+The generator uses AST because it needs to inspect the script without executing it. This matters because the generator should not download data, start cloud jobs, or run expensive code just to discover imports and runtime inputs.
+
+| Code pattern | What AST helps detect |
+|---|---|
+| `import xarray as xr` | Dependency on `xarray` |
+| `import h5py` | Dependency on `h5py` and possible HDF5 workflow |
+| `parser.add_argument("--bbox")` | Runtime input named `bbox` |
+| `parser.add_argument("--dest")` | Output directory argument for `run.sh` |
+| `ds.to_zarr(...)` | Implicit need for `zarr` and `numcodecs` |
+| `earthaccess.search_data(...)` | CMR / Earthdata access pattern |
+
+---
+
+## 6. Dependency Mapping
+
+Dependency mapping converts Python import names into installable package names.
+
+This is necessary because the name used in Python code is not always the same as the package name that must be installed.
+
+| Python import | Install dependency |
+|---|---|
+| `xarray` | `xarray` |
+| `h5py` | `h5py`, with `h5netcdf` as implicit support |
+| `s3fs` | `s3fs`, `fsspec`, `boto3`, `botocore` |
+| `earthaccess` | `earthaccess`, `requests` |
+| `maap` | `maap-py` |
+| `yaml` | `pyyaml` |
+| `rasterio` / `rioxarray` | `rasterio` / `rioxarray` for COG and raster workflows |
+
+---
+
+## 7. Template Rendering
+
+The generator does not manually hard-code every output file. It fills reusable templates with values inferred from the input script and optional manifest.
+
+| Template | Generated output |
+|---|---|
+| `Dockerfile.template` | `Dockerfile` |
+| `algorithm.yml.template` | `algorithm.yml` |
+| `env.yml.template` | `env.yml` |
+| `run.sh.template` | `run.sh` |
+| `commandline.cwl.template` | `application.cwl` |
+| `workflow.cwl.template` | `workflow.cwl` |
+
+---
+
+## 8. End-to-End Workflow
+
+```text
+1. Create or update the input science script.
+2. Run generator/generate_package.py from the repository root.
+3. The generator performs AST-based static analysis.
+4. Dependencies are resolved using dependency_map.yml and implicit rules.
+5. Templates are rendered into the generated package directory.
+6. validate_package.sh checks the package structure.
+7. build.sh creates the runtime environment.
+8. run.sh executes the science workflow as a packaged job.
+9. Optional OpenAI analysis writes semantic feedback into report.md.
+10. Outputs are inspected, such as Zarr, manifest.json, and report.md.
+```
