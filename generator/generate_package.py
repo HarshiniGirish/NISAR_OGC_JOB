@@ -10,6 +10,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -17,12 +18,17 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT_FOR_IMPORTS = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT_FOR_IMPORTS) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT_FOR_IMPORTS))
+
 try:
     from .access_evidence import build_access_evidence
     from .access_planner import plan_access
 except ImportError:
     from access_evidence import build_access_evidence
     from access_planner import plan_access
+from mcp_server.tools.recommendation import build_dataset_facts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1032,7 +1038,10 @@ def build_run_commands(runtime_config: dict[str, Any], entrypoint: str) -> dict[
 
 
 def build_llm_prompt(
-    app_config: dict[str, Any], analysis: dict[str, Any], access_plan: dict[str, Any]
+    app_config: dict[str, Any],
+    analysis: dict[str, Any],
+    dataset_facts: dict[str, Any],
+    access_plan: dict[str, Any],
 ) -> str:
     payload = {
         "task": (
@@ -1048,6 +1057,7 @@ def build_llm_prompt(
             "resources": app_config.get("resources", {}),
         },
         "static_analysis": analysis,
+        "dataset_facts": dataset_facts,
         "access_plan": access_plan,
         "response_format": [
             "List blocking issues first.",
@@ -1787,6 +1797,7 @@ def build_report(
     detected_imports: list[str],
     inferred_inputs: dict[str, Any],
     analysis: dict[str, Any],
+    dataset_facts: dict[str, Any],
     access_plan: dict[str, Any],
     llm_analysis: dict[str, Any],
     implicit_dependencies: dict[str, list[str]],
@@ -1803,6 +1814,7 @@ def build_report(
         "detected_imports": detected_imports,
         "inferred_inputs": inferred_inputs,
         "analysis": analysis,
+        "dataset_facts": dataset_facts,
         "access_plan": access_plan,
         "llm_analysis": llm_analysis,
         "implicit_dependencies": implicit_dependencies,
@@ -1883,6 +1895,31 @@ def build_report(
             markdown_lines.append(
                 f"| `{item.get('severity')}` | `{item.get('rule')}` | {location} | {guidance} |"
             )
+
+    markdown_lines.extend(["", "## Dataset Facts", ""])
+    markdown_lines.append(f"- Source: `{dataset_facts.get('source', 'unknown')}`")
+    markdown_lines.append(f"- Live metadata: `{dataset_facts.get('live_metadata', False)}`")
+    access_options = dataset_facts.get("access_options", {})
+    if access_options:
+        enabled_options = [
+            name
+            for name, enabled in access_options.items()
+            if isinstance(enabled, bool) and enabled
+        ]
+        markdown_lines.append(
+            "- Access options: "
+            + (", ".join(f"`{name}`" for name in enabled_options) if enabled_options else "none detected")
+        )
+    asset = dataset_facts.get("asset_inspection", {})
+    if asset:
+        markdown_lines.append(f"- Asset format: `{asset.get('format', 'unknown')}`")
+        if asset.get("variables"):
+            markdown_lines.append(
+                "- Variables: " + ", ".join(f"`{name}`" for name in asset.get("variables", []))
+            )
+    subset_cost = dataset_facts.get("subset_cost", {})
+    if subset_cost:
+        markdown_lines.append(f"- Subset risk: `{subset_cost.get('risk', 'unknown')}`")
 
     markdown_lines.extend(["", "## Optimized Access Plan", ""])
     markdown_lines.append(f"- Source: `{access_plan.get('source', 'unknown')}`")
@@ -2004,6 +2041,11 @@ def parse_cli_args() -> argparse.Namespace:
         help="OpenAI model name used by --ai-access-planner.",
     )
     parser.add_argument(
+        "--live-dataset-facts",
+        action="store_true",
+        help="Allow dataset fact tools to make live CMR metadata requests. Defaults to offline inference.",
+    )
+    parser.add_argument(
         "--llm-provider",
         default=os.environ.get("LLM_PROVIDER", "auto"),
         choices=["auto", "openai", "anthropic"],
@@ -2097,13 +2139,15 @@ def main() -> None:
         analysis=analysis,
         detected_imports=detected_imports,
     )
+    dataset_facts = build_dataset_facts(access_evidence, live=cli_args.live_dataset_facts)
     access_plan = plan_access(
         evidence=access_evidence,
+        dataset_facts=dataset_facts,
         enabled=cli_args.ai_access_planner,
         provider=cli_args.access_planner_provider,
         model=cli_args.access_planner_model,
     )
-    llm_prompt = build_llm_prompt(app_config, analysis, access_plan)
+    llm_prompt = build_llm_prompt(app_config, analysis, dataset_facts, access_plan)
     llm_analysis = run_llm_analysis(
         llm_prompt,
         cli_args.llm_analysis,
@@ -2180,6 +2224,9 @@ def main() -> None:
 
     write_text(output_dir / "access_plan.json", json.dumps(access_plan, indent=2) + "\n")
     generated_files.append("access_plan.json")
+
+    write_text(output_dir / "dataset_facts.json", json.dumps(dataset_facts, indent=2) + "\n")
+    generated_files.append("dataset_facts.json")
 
     write_text(output_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
     generated_files.append("analysis.json")
@@ -2273,6 +2320,7 @@ For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`)
         detected_imports,
         inputs,
         analysis,
+        dataset_facts,
         access_plan,
         llm_analysis,
         implicit_dependencies,

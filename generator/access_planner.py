@@ -17,16 +17,19 @@ except ImportError:
 def plan_access(
     *,
     evidence: dict[str, Any],
+    dataset_facts: dict[str, Any] | None = None,
     enabled: bool,
     provider: str,
     model: str,
 ) -> dict[str, Any]:
-    fallback_plan = rule_based_access_plan(evidence)
+    dataset_facts = dataset_facts or {}
+    fallback_plan = rule_based_access_plan(evidence, dataset_facts)
 
     if not enabled:
         return finalize_plan(
             fallback_plan,
             evidence,
+            dataset_facts=dataset_facts,
             source="rule_based",
             planner_status="ai_not_requested",
             fallback_used=False,
@@ -37,16 +40,18 @@ def plan_access(
         return finalize_plan(
             fallback_plan,
             evidence,
+            dataset_facts=dataset_facts,
             source="rule_based",
             planner_status=f"unsupported_provider:{resolved_provider}",
             fallback_used=True,
         )
 
-    ai_plan = call_openai_planner(evidence, model)
+    ai_plan = call_openai_planner(evidence, dataset_facts, model)
     if ai_plan.get("status") != "completed":
         return finalize_plan(
             fallback_plan,
             evidence,
+            dataset_facts=dataset_facts,
             source="rule_based",
             planner_status=ai_plan.get("status", "failed"),
             fallback_used=True,
@@ -59,6 +64,7 @@ def plan_access(
         return finalize_plan(
             fallback_plan,
             evidence,
+            dataset_facts=dataset_facts,
             source="rule_based",
             planner_status="ai_plan_invalid",
             fallback_used=True,
@@ -68,6 +74,7 @@ def plan_access(
     return finalize_plan(
         candidate,
         evidence,
+        dataset_facts=dataset_facts,
         source="ai_openai",
         planner_status="completed",
         fallback_used=False,
@@ -82,16 +89,27 @@ def resolve_provider(provider: str) -> str:
     return provider
 
 
-def rule_based_access_plan(evidence: dict[str, Any]) -> dict[str, Any]:
+def rule_based_access_plan(evidence: dict[str, Any], dataset_facts: dict[str, Any] | None = None) -> dict[str, Any]:
+    dataset_facts = dataset_facts or {}
     formats = set(evidence.get("file_formats", []))
     operations = set(evidence.get("operations", []))
     urls = evidence.get("urls", [])
     imports = set(evidence.get("imports", []))
-    has_s3 = any(str(url).startswith("s3://") for url in urls) or "direct_s3" in operations
+    access_options = dataset_facts.get("access_options", {})
+    asset_format = dataset_facts.get("asset_inspection", {}).get("format")
+    if asset_format and asset_format != "unknown":
+        formats.add(asset_format)
+    has_s3 = (
+        any(str(url).startswith("s3://") for url in urls)
+        or "direct_s3" in operations
+        or access_options.get("direct_s3", False)
+    )
 
     if has_s3 and "netcdf" in formats and ("xarray" in imports or "write_cog" in operations):
         strategy = "direct_s3_xarray"
         reason = "Detected S3 NetCDF access with xarray-compatible processing."
+        if dataset_facts:
+            reason = "Dataset facts indicate direct S3 NetCDF access is available."
         hints = [
             "Use temporary Earthdata/MAAP S3 credentials.",
             "Open with s3fs and xarray.open_dataset(..., chunks='auto').",
@@ -137,12 +155,13 @@ def rule_based_access_plan(evidence: dict[str, Any]) -> dict[str, Any]:
         "chosen_strategy": strategy,
         "reasoning": reason,
         "required_dependencies": ALLOWED_STRATEGIES[strategy]["required_dependencies"],
-        "warnings": default_warnings(evidence),
+        "warnings": default_warnings(evidence, dataset_facts),
         "implementation_hints": hints,
     }
 
 
-def default_warnings(evidence: dict[str, Any]) -> list[str]:
+def default_warnings(evidence: dict[str, Any], dataset_facts: dict[str, Any] | None = None) -> list[str]:
+    dataset_facts = dataset_facts or {}
     warnings: list[str] = []
     operations = set(evidence.get("operations", []))
 
@@ -150,16 +169,19 @@ def default_warnings(evidence: dict[str, Any]) -> list[str]:
         warnings.append("No spatial or index subset operation was detected; full-output runs may be expensive.")
     if any(issue.get("severity") == "error" for issue in evidence.get("issues", [])):
         warnings.append("Static analysis found blocking issues that should be fixed before execution.")
+    subset_warning = dataset_facts.get("subset_cost", {}).get("warning")
+    if subset_warning:
+        warnings.append(str(subset_warning))
 
     return warnings
 
 
-def call_openai_planner(evidence: dict[str, Any], model: str) -> dict[str, Any]:
+def call_openai_planner(evidence: dict[str, Any], dataset_facts: dict[str, Any], model: str) -> dict[str, Any]:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return {"status": "skipped", "message": "OPENAI_API_KEY is not set."}
 
-    prompt = build_openai_prompt(evidence)
+    prompt = build_openai_prompt(evidence, dataset_facts)
     body = json.dumps(
         {
             "model": model,
@@ -196,12 +218,13 @@ def call_openai_planner(evidence: dict[str, Any], model: str) -> dict[str, Any]:
         return {"status": "failed", "message": f"OpenAI planner returned invalid JSON: {exc}"}
 
 
-def build_openai_prompt(evidence: dict[str, Any]) -> str:
+def build_openai_prompt(evidence: dict[str, Any], dataset_facts: dict[str, Any]) -> str:
     payload = {
         "task": "Choose the best data access strategy for a generated OGC/DPS package.",
         "allowed_strategies": allowed_strategy_ids(),
         "strategy_details": ALLOWED_STRATEGIES,
         "evidence": evidence,
+        "dataset_facts": dataset_facts,
         "required_json_schema": {
             "chosen_strategy": "one of allowed_strategies",
             "reasoning": "short explanation",
@@ -217,6 +240,7 @@ def finalize_plan(
     plan: dict[str, Any],
     evidence: dict[str, Any],
     *,
+    dataset_facts: dict[str, Any] | None = None,
     source: str,
     planner_status: str,
     fallback_used: bool,
@@ -224,6 +248,7 @@ def finalize_plan(
     model: str = "",
     validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    dataset_facts = dataset_facts or {}
     validation = validation or validate_access_plan(plan, evidence)
     return {
         "source": source,
@@ -242,5 +267,13 @@ def finalize_plan(
             "file_formats": evidence.get("file_formats", []),
             "operations": evidence.get("operations", []),
             "url_count": len(evidence.get("urls", [])),
+        },
+        "dataset_facts_summary": {
+            "source": dataset_facts.get("source", ""),
+            "access_options": dataset_facts.get("access_options", {}),
+            "subset_risk": dataset_facts.get("subset_cost", {}).get("risk"),
+            "recommended_strategies": dataset_facts.get("recommendation", {}).get(
+                "recommended_strategies", []
+            ),
         },
     }
