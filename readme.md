@@ -93,6 +93,8 @@ generated_package/
 ├── algorithm.yml
 ├── application.cwl
 ├── workflow.cwl
+├── app.yaml
+├── access_plan.json
 ├── analysis.json
 ├── report.md
 └── README.md
@@ -111,17 +113,24 @@ export EARTHDATA_PASSWORD="your_password"
 
 ---
 
-## 2.4 Optional OpenAI Analysis
+## 2.4 Optional OpenAI Analysis and AI Access Planning
 
 The OpenAI analysis is optional and is not required for package generation.
 
-The main package is still created by the Python generator using static analysis, dependency mapping, and templates. OpenAI is only used as an additional review step after generation.
+The main package is still created by the Python generator using static analysis, dependency mapping, strategy validation, and templates.
+
+There are two optional OpenAI uses:
+
+- `--ai-access-planner`: asks OpenAI to choose the best supported access strategy, then validates that choice and writes `access_plan.json`.
+- `--llm-analysis`: asks OpenAI to review the generated package, static analysis, and access plan.
 
 ```bash
 export OPENAI_API_KEY="your_new_key_here"
 
 python3 generator/generate_package.py input/nisar_access_subset.py \
   --output-dir generated_package \
+  --ai-access-planner \
+  --access-planner-provider openai \
   --llm-analysis \
   --llm-provider openai
 ```
@@ -135,6 +144,9 @@ The optional analysis reviews the generated package metadata and report. It can 
 - Scaling limitations
 - Reproducibility concerns
 ```
+
+If `--ai-access-planner` is omitted, the generator still writes
+`access_plan.json` using deterministic fallback rules.
 
 ---
 
@@ -191,6 +203,7 @@ The generated output is a subsetted NISAR Zarr data store plus a manifest file t
 | `env.yml` / `requirements.txt` | No | Yes | Created from imports, dependency mapping, and implicit rules |
 | `Dockerfile` | No | Yes | Generated container recipe using the selected base image |
 | `application.cwl` / `workflow.cwl` | No | Yes | Generated OGC/CWL execution support |
+| `access_plan.json` | No | Yes | AI or fallback selected optimized data-access strategy |
 | `analysis.json` / `report.md` | No | Yes | Static-analysis and human-readable feedback artifacts |
 
 ---
@@ -207,8 +220,9 @@ The generator performs the following steps:
 5. Detects implicit dependencies such as Zarr, Numcodecs, Earthaccess, or S3 support.
 6. Renders reusable templates into package files.
 7. Creates a generated package directory.
-8. Optionally runs OpenAI-assisted review.
-9. Produces reports and validation artifacts.
+8. Creates an optimized access plan using AI or deterministic fallback rules.
+9. Optionally runs OpenAI-assisted review.
+10. Produces reports and validation artifacts.
 ```
 
 ---
