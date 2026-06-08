@@ -95,6 +95,7 @@ generated_package/
 ├── workflow.cwl
 ├── app.yaml
 ├── access_plan.json
+├── dataset_facts.json
 ├── analysis.json
 ├── report.md
 └── README.md
@@ -122,6 +123,7 @@ The main package is still created by the Python generator using static analysis,
 There are two optional OpenAI uses:
 
 - `--ai-access-planner`: asks OpenAI to choose the best supported access strategy, then validates that choice and writes `access_plan.json`.
+- `dataset_facts.json`: records MCP-ready dataset facts gathered from local tools, such as access options, inferred asset format, variables, and subset-cost risk.
 - `--llm-analysis`: asks OpenAI to review the generated package, static analysis, and access plan.
 
 ```bash
@@ -133,6 +135,16 @@ python3 generator/generate_package.py input/nisar_access_subset.py \
   --access-planner-provider openai \
   --llm-analysis \
   --llm-provider openai
+```
+
+Use live CMR metadata lookups for dataset facts when network access is available:
+
+```bash
+python3 generator/generate_package.py input/opera_access_structure.py \
+  --output-dir generated_opera_package \
+  --live-dataset-facts \
+  --ai-access-planner \
+  --access-planner-provider openai
 ```
 
 The optional analysis reviews the generated package metadata and report. It can flag issues such as:
@@ -204,6 +216,7 @@ The generated output is a subsetted NISAR Zarr data store plus a manifest file t
 | `Dockerfile` | No | Yes | Generated container recipe using the selected base image |
 | `application.cwl` / `workflow.cwl` | No | Yes | Generated OGC/CWL execution support |
 | `access_plan.json` | No | Yes | AI or fallback selected optimized data-access strategy |
+| `dataset_facts.json` | No | Yes | MCP-ready dataset facts used by access planning |
 | `analysis.json` / `report.md` | No | Yes | Static-analysis and human-readable feedback artifacts |
 
 ---
