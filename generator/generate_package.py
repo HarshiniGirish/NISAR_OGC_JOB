@@ -17,6 +17,13 @@ from typing import Any
 
 import yaml
 
+try:
+    from .access_evidence import build_access_evidence
+    from .access_planner import plan_access
+except ImportError:
+    from access_evidence import build_access_evidence
+    from access_planner import plan_access
+
 
 ROOT = Path(__file__).resolve().parents[1]
 INPUT_DIR = ROOT / "input"
@@ -1024,7 +1031,9 @@ def build_run_commands(runtime_config: dict[str, Any], entrypoint: str) -> dict[
     }
 
 
-def build_llm_prompt(app_config: dict[str, Any], analysis: dict[str, Any]) -> str:
+def build_llm_prompt(
+    app_config: dict[str, Any], analysis: dict[str, Any], access_plan: dict[str, Any]
+) -> str:
     payload = {
         "task": (
             "Review this generated MAAP DPS / OGC Application Package analysis. "
@@ -1039,6 +1048,7 @@ def build_llm_prompt(app_config: dict[str, Any], analysis: dict[str, Any]) -> st
             "resources": app_config.get("resources", {}),
         },
         "static_analysis": analysis,
+        "access_plan": access_plan,
         "response_format": [
             "List blocking issues first.",
             "For each issue, include remediation that can be applied before registration.",
@@ -1777,6 +1787,7 @@ def build_report(
     detected_imports: list[str],
     inferred_inputs: dict[str, Any],
     analysis: dict[str, Any],
+    access_plan: dict[str, Any],
     llm_analysis: dict[str, Any],
     implicit_dependencies: dict[str, list[str]],
     dependencies: dict[str, list[str]],
@@ -1792,6 +1803,7 @@ def build_report(
         "detected_imports": detected_imports,
         "inferred_inputs": inferred_inputs,
         "analysis": analysis,
+        "access_plan": access_plan,
         "llm_analysis": llm_analysis,
         "implicit_dependencies": implicit_dependencies,
         "resolved_dependencies": dependencies,
@@ -1871,6 +1883,25 @@ def build_report(
             markdown_lines.append(
                 f"| `{item.get('severity')}` | `{item.get('rule')}` | {location} | {guidance} |"
             )
+
+    markdown_lines.extend(["", "## Optimized Access Plan", ""])
+    markdown_lines.append(f"- Source: `{access_plan.get('source', 'unknown')}`")
+    markdown_lines.append(f"- Planner status: `{access_plan.get('planner_status', 'unknown')}`")
+    markdown_lines.append(f"- Chosen strategy: `{access_plan.get('chosen_strategy', 'unknown')}`")
+    if access_plan.get("fallback_used"):
+        markdown_lines.append("- Fallback used: `true`")
+    if access_plan.get("reasoning"):
+        markdown_lines.append(f"- Reasoning: {access_plan['reasoning']}")
+    if access_plan.get("planner_message"):
+        markdown_lines.append(f"- Planner message: {access_plan['planner_message']}")
+    if access_plan.get("implementation_hints"):
+        markdown_lines.extend(["", "Implementation hints:"])
+        for hint in access_plan["implementation_hints"]:
+            markdown_lines.append(f"- {hint}")
+    if access_plan.get("warnings"):
+        markdown_lines.extend(["", "Access warnings:"])
+        for warning in access_plan["warnings"]:
+            markdown_lines.append(f"- {warning}")
 
     markdown_lines.extend(["", "## LLM-Assisted Analysis", ""])
     markdown_lines.append(f"- Status: `{llm_analysis.get('status', 'not_requested')}`")
@@ -1955,6 +1986,22 @@ def parse_cli_args() -> argparse.Namespace:
         "--llm-analysis",
         action="store_true",
         help="Invoke the optional LLM semantic analysis pass.",
+    )
+    parser.add_argument(
+        "--ai-access-planner",
+        action="store_true",
+        help="Use OpenAI to choose the optimized data access strategy before package generation.",
+    )
+    parser.add_argument(
+        "--access-planner-provider",
+        default=os.environ.get("ACCESS_PLANNER_PROVIDER", "auto"),
+        choices=["auto", "openai", "rule_based"],
+        help="Provider for --ai-access-planner. The current AI provider implementation is OpenAI.",
+    )
+    parser.add_argument(
+        "--access-planner-model",
+        default=os.environ.get("ACCESS_PLANNER_MODEL", "gpt-4o-mini"),
+        help="OpenAI model name used by --ai-access-planner.",
     )
     parser.add_argument(
         "--llm-provider",
@@ -2044,7 +2091,19 @@ def main() -> None:
         implicit_dependencies,
     )
     analysis = analyze_source(source_info, detected_imports, inputs)
-    llm_prompt = build_llm_prompt(app_config, analysis)
+    access_evidence = build_access_evidence(
+        source_info=source_info,
+        app_config=app_config,
+        analysis=analysis,
+        detected_imports=detected_imports,
+    )
+    access_plan = plan_access(
+        evidence=access_evidence,
+        enabled=cli_args.ai_access_planner,
+        provider=cli_args.access_planner_provider,
+        model=cli_args.access_planner_model,
+    )
+    llm_prompt = build_llm_prompt(app_config, analysis, access_plan)
     llm_analysis = run_llm_analysis(
         llm_prompt,
         cli_args.llm_analysis,
@@ -2119,6 +2178,9 @@ def main() -> None:
     write_text(output_dir / "app.yaml", build_generated_app_manifest(app_config))
     generated_files.append("app.yaml")
 
+    write_text(output_dir / "access_plan.json", json.dumps(access_plan, indent=2) + "\n")
+    generated_files.append("access_plan.json")
+
     write_text(output_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
     generated_files.append("analysis.json")
 
@@ -2166,6 +2228,7 @@ Runtime type: `{runtime_config.get('type', 'python')}`.
 - `env.yml`
 - `requirements.txt`
 - `app.yaml`
+- `access_plan.json`
 - `analysis.json`
 - `llm_analysis_prompt.json`
 - `{entrypoint}`
@@ -2210,6 +2273,7 @@ For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`)
         detected_imports,
         inputs,
         analysis,
+        access_plan,
         llm_analysis,
         implicit_dependencies,
         dependencies,
