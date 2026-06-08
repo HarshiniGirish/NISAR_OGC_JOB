@@ -96,6 +96,7 @@ generated_package/
 ├── app.yaml
 ├── access_plan.json
 ├── dataset_facts.json
+├── access_runtime.py
 ├── analysis.json
 ├── report.md
 └── README.md
@@ -124,6 +125,7 @@ There are two optional OpenAI uses:
 
 - `--ai-access-planner`: asks OpenAI to choose the best supported access strategy, then validates that choice and writes `access_plan.json`.
 - `dataset_facts.json`: records MCP-ready dataset facts gathered from local tools, such as access options, inferred asset format, variables, and subset-cost risk.
+- `access_runtime.py`: strategy-specific helper code generated from the validated access plan.
 - `--llm-analysis`: asks OpenAI to review the generated package, static analysis, and access plan.
 
 ```bash
@@ -217,6 +219,7 @@ The generated output is a subsetted NISAR Zarr data store plus a manifest file t
 | `application.cwl` / `workflow.cwl` | No | Yes | Generated OGC/CWL execution support |
 | `access_plan.json` | No | Yes | AI or fallback selected optimized data-access strategy |
 | `dataset_facts.json` | No | Yes | MCP-ready dataset facts used by access planning |
+| `access_runtime.py` | No | Yes | Strategy-specific reusable helper functions for the selected access plan |
 | `analysis.json` / `report.md` | No | Yes | Static-analysis and human-readable feedback artifacts |
 
 ---

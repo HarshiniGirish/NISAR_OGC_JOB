@@ -25,9 +25,11 @@ if str(REPO_ROOT_FOR_IMPORTS) not in sys.path:
 try:
     from .access_evidence import build_access_evidence
     from .access_planner import plan_access
+    from .access_runtime import build_access_runtime_module
 except ImportError:
     from access_evidence import build_access_evidence
     from access_planner import plan_access
+    from access_runtime import build_access_runtime_module
 from mcp_server.tools.recommendation import build_dataset_facts
 
 
@@ -822,6 +824,26 @@ def resolve_dependencies(
 
     if not any(dep == "python" or dep.startswith("python=") for dep in conda_dependencies):
         conda_dependencies.add("python=3.11")
+
+    if pip_dependencies:
+        conda_dependencies.add("pip")
+
+    return {
+        "conda": sorted(conda_dependencies, key=sort_conda_dependency),
+        "pip": sorted(pip_dependencies),
+    }
+
+
+def add_access_plan_dependencies(dependencies: dict[str, list[str]], access_plan: dict[str, Any]) -> dict[str, list[str]]:
+    conda_dependencies = set(dependencies.get("conda", []))
+    pip_dependencies = set(dependencies.get("pip", []))
+
+    for package_name in access_plan.get("required_dependencies", []):
+        package_name = str(package_name)
+        if package_name in PIP_ONLY_PACKAGES:
+            pip_dependencies.add(package_name)
+        elif package_name:
+            conda_dependencies.add(package_name)
 
     if pip_dependencies:
         conda_dependencies.add("pip")
@@ -2147,6 +2169,7 @@ def main() -> None:
         provider=cli_args.access_planner_provider,
         model=cli_args.access_planner_model,
     )
+    dependencies = add_access_plan_dependencies(dependencies, access_plan)
     llm_prompt = build_llm_prompt(app_config, analysis, dataset_facts, access_plan)
     llm_analysis = run_llm_analysis(
         llm_prompt,
@@ -2228,6 +2251,9 @@ def main() -> None:
     write_text(output_dir / "dataset_facts.json", json.dumps(dataset_facts, indent=2) + "\n")
     generated_files.append("dataset_facts.json")
 
+    write_text(output_dir / "access_runtime.py", build_access_runtime_module(access_plan, dataset_facts))
+    generated_files.append("access_runtime.py")
+
     write_text(output_dir / "analysis.json", json.dumps(analysis, indent=2) + "\n")
     generated_files.append("analysis.json")
 
@@ -2276,6 +2302,8 @@ Runtime type: `{runtime_config.get('type', 'python')}`.
 - `requirements.txt`
 - `app.yaml`
 - `access_plan.json`
+- `dataset_facts.json`
+- `access_runtime.py`
 - `analysis.json`
 - `llm_analysis_prompt.json`
 - `{entrypoint}`
