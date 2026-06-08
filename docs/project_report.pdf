@@ -1,0 +1,1020 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R 18 0 R] /Count 8 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 3260 >>
+stream
+BT
+/F1 18 Tf
+54 742 Td (Notebook/Script to OGC/DPS Application Package Generator) Tj
+-54 -742 Td
+/F1 14 Tf
+54 700 Td (Executive Summary) Tj
+-54 -700 Td
+/F1 10 Tf
+54 674 Td (This project prototypes an automated workflow that takes a scientist's notebook, Python) Tj
+-54 -674 Td
+/F1 10 Tf
+54 661 Td (script, or executable entrypoint and converts it into a first-draft MAAP DPS / OGC Application) Tj
+-54 -661 Td
+/F1 10 Tf
+54 648 Td (Package. The generator performs static analysis, infers runtime inputs and dependencies,) Tj
+-54 -648 Td
+/F1 10 Tf
+54 635 Td (creates packaging artifacts, and now includes AI-assisted optimized access planning supported) Tj
+-54 -635 Td
+/F1 10 Tf
+54 622 Td (by MCP-ready dataset fact tools.) Tj
+-54 -622 Td
+/F1 10 Tf
+54 601 Td (The main goal is to reduce the manual work required to move science code from an interactive) Tj
+-54 -601 Td
+/F1 10 Tf
+54 588 Td (development environment into a reproducible, scalable, cloud-executable package.) Tj
+-54 -588 Td
+/F1 14 Tf
+54 559 Td (Problem Statement) Tj
+-54 -559 Td
+/F1 10 Tf
+54 533 Td (Scientists often start with working analysis code, but deploying that code as a DPS or OGC) Tj
+-54 -533 Td
+/F1 10 Tf
+54 520 Td (application requires many additional files and decisions:) Tj
+-54 -520 Td
+/F1 10 Tf
+68 499 Td (? runtime wrapper scripts) Tj
+-68 -499 Td
+/F1 10 Tf
+68 486 Td (? build scripts) Tj
+-68 -486 Td
+/F1 10 Tf
+68 473 Td (? dependency/environment files) Tj
+-68 -473 Td
+/F1 10 Tf
+68 460 Td (? Dockerfile) Tj
+-68 -460 Td
+/F1 10 Tf
+68 447 Td (? algorithm metadata) Tj
+-68 -447 Td
+/F1 10 Tf
+68 434 Td (? CWL command and workflow descriptors) Tj
+-68 -434 Td
+/F1 10 Tf
+68 421 Td (? input/output schemas) Tj
+-68 -421 Td
+/F1 10 Tf
+68 408 Td (? data-access credentials and patterns) Tj
+-68 -408 Td
+/F1 10 Tf
+68 395 Td (? validation and reporting artifacts) Tj
+-68 -395 Td
+/F1 10 Tf
+54 374 Td (Creating these manually is slow, inconsistent, and error-prone. It also requires knowledge of) Tj
+-54 -374 Td
+/F1 10 Tf
+54 361 Td (data access patterns, cloud-hosted NASA data, MAAP runtime behavior, and OGC packaging) Tj
+-54 -361 Td
+/F1 10 Tf
+54 348 Td (conventions.) Tj
+-54 -348 Td
+/F1 14 Tf
+54 319 Td (Project Goal) Tj
+-54 -319 Td
+/F1 10 Tf
+54 293 Td (The project goal is:) Tj
+-54 -293 Td
+/F1 10 Tf
+54 272 Td (> Given user science code, automatically infer enough information to generate a runnable) Tj
+-54 -272 Td
+/F1 10 Tf
+54 259 Td (DPS/OGC package, explain risks, and recommend efficient data-access strategies.) Tj
+-54 -259 Td
+/F1 10 Tf
+54 238 Td (The generator is designed to work with:) Tj
+-54 -238 Td
+/F1 10 Tf
+68 217 Td (? Python scripts) Tj
+-68 -217 Td
+/F1 10 Tf
+68 204 Td (? notebooks converted to Python) Tj
+-68 -204 Td
+/F1 10 Tf
+68 191 Td (? executable .run / shell entrypoints) Tj
+-68 -191 Td
+/F1 10 Tf
+68 178 Td (? NISAR-style HDF5 workflows) Tj
+-68 -178 Td
+/F1 10 Tf
+68 165 Td (? OPERA-style NetCDF/COG workflows) Tj
+-68 -165 Td
+/F1 14 Tf
+54 136 Td (Repository Structure) Tj
+-54 -136 Td
+/F1 10 Tf
+54 110 Td (The repository now keeps source files and templates only. Generated package directories are) Tj
+-54 -110 Td
+/F1 10 Tf
+54 97 Td (intentionally ignored by git because they can be recreated at any time.) Tj
+-54 -97 Td
+/F1 10 Tf
+54 76 Td (Key source folders:) Tj
+-54 -76 Td
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 2420 >>
+stream
+BT
+/F1 10 Tf
+54 734 Td (generator/) Tj
+-54 -734 Td
+/F1 10 Tf
+54 721 Td (generate_package.py) Tj
+-54 -721 Td
+/F1 10 Tf
+54 708 Td (access_evidence.py) Tj
+-54 -708 Td
+/F1 10 Tf
+54 695 Td (access_planner.py) Tj
+-54 -695 Td
+/F1 10 Tf
+54 682 Td (access_plan_validator.py) Tj
+-54 -682 Td
+/F1 10 Tf
+54 669 Td (access_runtime.py) Tj
+-54 -669 Td
+/F1 10 Tf
+54 656 Td (access_strategies.py) Tj
+-54 -656 Td
+/F1 10 Tf
+54 643 Td (dependency_map.yml) Tj
+-54 -643 Td
+/F1 10 Tf
+54 622 Td (mcp_server/) Tj
+-54 -622 Td
+/F1 10 Tf
+54 609 Td (access_mcp_server.py) Tj
+-54 -609 Td
+/F1 10 Tf
+54 596 Td (tools/) Tj
+-54 -596 Td
+/F1 10 Tf
+54 583 Td (cmr.py) Tj
+-54 -583 Td
+/F1 10 Tf
+54 570 Td (asset_inspection.py) Tj
+-54 -570 Td
+/F1 10 Tf
+54 557 Td (access_options.py) Tj
+-54 -557 Td
+/F1 10 Tf
+54 544 Td (cost_estimator.py) Tj
+-54 -544 Td
+/F1 10 Tf
+54 531 Td (recommendation.py) Tj
+-54 -531 Td
+/F1 10 Tf
+54 510 Td (input/) Tj
+-54 -510 Td
+/F1 10 Tf
+54 497 Td (nisar_access_subset.py) Tj
+-54 -497 Td
+/F1 10 Tf
+54 484 Td (opera_access_structure.py) Tj
+-54 -484 Td
+/F1 10 Tf
+54 463 Td (templates/) Tj
+-54 -463 Td
+/F1 10 Tf
+54 450 Td (Dockerfile.template) Tj
+-54 -450 Td
+/F1 10 Tf
+54 437 Td (run.sh.template) Tj
+-54 -437 Td
+/F1 10 Tf
+54 424 Td (env.yml.template) Tj
+-54 -424 Td
+/F1 10 Tf
+54 411 Td (algorithm.yml.template) Tj
+-54 -411 Td
+/F1 10 Tf
+54 398 Td (commandline.cwl.template) Tj
+-54 -398 Td
+/F1 10 Tf
+54 385 Td (workflow.cwl.template) Tj
+-54 -385 Td
+/F1 10 Tf
+54 364 Td (tests/) Tj
+-54 -364 Td
+/F1 10 Tf
+54 335 Td (Generated folders such as generated_package/ and generated_opera_package/ are outputs, not) Tj
+-54 -335 Td
+/F1 10 Tf
+54 322 Td (source.) Tj
+-54 -322 Td
+/F1 14 Tf
+54 293 Td (End-to-End Workflow) Tj
+-54 -293 Td
+/F1 10 Tf
+54 267 Td (The generator workflow is:) Tj
+-54 -267 Td
+/F1 10 Tf
+54 238 Td (User script/notebook) Tj
+-54 -238 Td
+/F1 10 Tf
+54 225 Td (|) Tj
+-54 -225 Td
+/F1 10 Tf
+54 212 Td (v) Tj
+-54 -212 Td
+/F1 10 Tf
+54 199 Td (Static analysis) Tj
+-54 -199 Td
+/F1 10 Tf
+54 186 Td (|) Tj
+-54 -186 Td
+/F1 10 Tf
+54 173 Td (v) Tj
+-54 -173 Td
+/F1 10 Tf
+54 160 Td (Dependency and input inference) Tj
+-54 -160 Td
+/F1 10 Tf
+54 147 Td (|) Tj
+-54 -147 Td
+/F1 10 Tf
+54 134 Td (v) Tj
+-54 -134 Td
+/F1 10 Tf
+54 121 Td (Dataset fact extraction) Tj
+-54 -121 Td
+/F1 10 Tf
+54 108 Td (|) Tj
+-54 -108 Td
+/F1 10 Tf
+54 95 Td (v) Tj
+-54 -95 Td
+/F1 10 Tf
+54 82 Td (AI or fallback access planning) Tj
+-54 -82 Td
+/F1 10 Tf
+54 69 Td (|) Tj
+-54 -69 Td
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 9 0 R >>
+endobj
+9 0 obj
+<< /Length 2604 >>
+stream
+BT
+/F1 10 Tf
+54 742 Td (v) Tj
+-54 -742 Td
+/F1 10 Tf
+54 729 Td (Validated strategy selection) Tj
+-54 -729 Td
+/F1 10 Tf
+54 716 Td (|) Tj
+-54 -716 Td
+/F1 10 Tf
+54 703 Td (v) Tj
+-54 -703 Td
+/F1 10 Tf
+54 690 Td (Template rendering) Tj
+-54 -690 Td
+/F1 10 Tf
+54 677 Td (|) Tj
+-54 -677 Td
+/F1 10 Tf
+54 664 Td (v) Tj
+-54 -664 Td
+/F1 10 Tf
+54 651 Td (Generated DPS/OGC package) Tj
+-54 -651 Td
+/F1 14 Tf
+54 614 Td (Static Analysis) Tj
+-54 -614 Td
+/F1 10 Tf
+54 588 Td (The generator uses Python AST parsing and source inspection to identify:) Tj
+-54 -588 Td
+/F1 10 Tf
+68 567 Td (? imports) Tj
+-68 -567 Td
+/F1 10 Tf
+68 554 Td (? command-line arguments) Tj
+-68 -554 Td
+/F1 10 Tf
+68 541 Td (? notebook/Papermill-style parameters) Tj
+-68 -541 Td
+/F1 10 Tf
+68 528 Td (? data-access calls) Tj
+-68 -528 Td
+/F1 10 Tf
+68 515 Td (? S3, HTTPS, CMR, STAC, and local file references) Tj
+-68 -515 Td
+/F1 10 Tf
+68 502 Td (? output calls such as to_zarr\(\) and to_raster\(\)) Tj
+-68 -502 Td
+/F1 10 Tf
+68 489 Td (? risky patterns such as interactive input, notebook magics, hardcoded local paths, and) Tj
+-68 -489 Td
+/F1 10 Tf
+68 476 Td (missing runtime declarations) Tj
+-68 -476 Td
+/F1 10 Tf
+54 455 Td (This analysis is performed without running the user's science workflow.) Tj
+-54 -455 Td
+/F1 14 Tf
+54 426 Td (Generated Package Artifacts) Tj
+-54 -426 Td
+/F1 10 Tf
+54 400 Td (For each input script, the generator can create:) Tj
+-54 -400 Td
+/F1 10 Tf
+54 371 Td (app.yaml) Tj
+-54 -371 Td
+/F1 10 Tf
+54 358 Td (run.sh) Tj
+-54 -358 Td
+/F1 10 Tf
+54 345 Td (build.sh) Tj
+-54 -345 Td
+/F1 10 Tf
+54 332 Td (env.yml) Tj
+-54 -332 Td
+/F1 10 Tf
+54 319 Td (requirements.txt) Tj
+-54 -319 Td
+/F1 10 Tf
+54 306 Td (Dockerfile) Tj
+-54 -306 Td
+/F1 10 Tf
+54 293 Td (algorithm_config.yaml) Tj
+-54 -293 Td
+/F1 10 Tf
+54 280 Td (algorithm.yml) Tj
+-54 -280 Td
+/F1 10 Tf
+54 267 Td (application.cwl) Tj
+-54 -267 Td
+/F1 10 Tf
+54 254 Td (workflow.cwl) Tj
+-54 -254 Td
+/F1 10 Tf
+54 241 Td (analysis.json) Tj
+-54 -241 Td
+/F1 10 Tf
+54 228 Td (dataset_facts.json) Tj
+-54 -228 Td
+/F1 10 Tf
+54 215 Td (access_plan.json) Tj
+-54 -215 Td
+/F1 10 Tf
+54 202 Td (access_runtime.py) Tj
+-54 -202 Td
+/F1 10 Tf
+54 189 Td (llm_analysis_prompt.json) Tj
+-54 -189 Td
+/F1 10 Tf
+54 176 Td (report.md) Tj
+-54 -176 Td
+/F1 10 Tf
+54 163 Td (stac-input.json) Tj
+-54 -163 Td
+/F1 10 Tf
+54 150 Td (stac-output.json) Tj
+-54 -150 Td
+/F1 10 Tf
+54 137 Td (validate_package.sh) Tj
+-54 -137 Td
+/F1 10 Tf
+54 124 Td (register_dps.py) Tj
+-54 -124 Td
+/F1 10 Tf
+54 111 Td (publish_ogc.py) Tj
+-54 -111 Td
+/F1 10 Tf
+54 82 Td (These files are created from templates and inferred metadata.) Tj
+-54 -82 Td
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 11 0 R >>
+endobj
+11 0 obj
+<< /Length 2473 >>
+stream
+BT
+/F1 14 Tf
+54 734 Td (NISAR Demonstration) Tj
+-54 -734 Td
+/F1 10 Tf
+54 708 Td (The NISAR example uses:) Tj
+-54 -708 Td
+/F1 10 Tf
+68 687 Td (? NISAR GCOV HDF5 data) Tj
+-68 -687 Td
+/F1 10 Tf
+68 674 Td (? Earthdata / MAAP / S3 credential access) Tj
+-68 -674 Td
+/F1 10 Tf
+68 661 Td (? bbox subsetting) Tj
+-68 -661 Td
+/F1 10 Tf
+68 648 Td (? Zarr output) Tj
+-68 -648 Td
+/F1 10 Tf
+68 635 Td (? a manifest file describing the output) Tj
+-68 -635 Td
+/F1 10 Tf
+54 614 Td (The generator adds safeguards so that a full granule is not accidentally written to a small) Tj
+-54 -614 Td
+/F1 10 Tf
+54 601 Td (notebook disk. A bbox or explicit full-granule flag is required.) Tj
+-54 -601 Td
+/F1 10 Tf
+54 580 Td (Example generation:) Tj
+-54 -580 Td
+/F1 10 Tf
+54 551 Td (python3 generator/generate_package.py) Tj
+-54 -551 Td
+/F1 10 Tf
+54 522 Td (Example run:) Tj
+-54 -522 Td
+/F1 10 Tf
+54 493 Td (cd generated_package) Tj
+-54 -493 Td
+/F1 10 Tf
+54 480 Td (./run.sh \\) Tj
+-54 -480 Td
+/F1 10 Tf
+54 467 Td (--bbox "148325,5392805,158325,5402805" \\) Tj
+-54 -467 Td
+/F1 10 Tf
+54 454 Td (--bbox_crs "EPSG:32633") Tj
+-54 -454 Td
+/F1 14 Tf
+54 417 Td (OPERA Demonstration) Tj
+-54 -417 Td
+/F1 10 Tf
+54 391 Td (The OPERA example uses:) Tj
+-54 -391 Td
+/F1 10 Tf
+68 370 Td (? OPERA DISP-S1 NetCDF) Tj
+-68 -370 Td
+/F1 10 Tf
+68 357 Td (? direct S3 URL defaults) Tj
+-68 -357 Td
+/F1 10 Tf
+68 344 Td (? MAAP and Earthaccess credential fallback) Tj
+-68 -344 Td
+/F1 10 Tf
+68 331 Td (? xarray.open_dataset\(..., chunks="auto"\)) Tj
+-68 -331 Td
+/F1 10 Tf
+68 318 Td (? water mask extraction) Tj
+-68 -318 Td
+/F1 10 Tf
+68 305 Td (? index-window subsetting) Tj
+-68 -305 Td
+/F1 10 Tf
+68 292 Td (? COG output) Tj
+-68 -292 Td
+/F1 10 Tf
+54 271 Td (The OPERA script is self-describing through metadata constants such as:) Tj
+-54 -271 Td
+/F1 10 Tf
+54 242 Td (APP_NAME = "opera_water_mask_to_cog") Tj
+-54 -242 Td
+/F1 10 Tf
+54 229 Td (APP_TARGET = "both") Tj
+-54 -229 Td
+/F1 10 Tf
+54 216 Td (APP_BASE_CONTAINER = "mas.maap-project.org/root/maap-workspaces/base_images/pangeo:v4.1.1") Tj
+-54 -216 Td
+/F1 10 Tf
+54 187 Td (Example generation:) Tj
+-54 -187 Td
+/F1 10 Tf
+54 158 Td (python3 generator/generate_package.py input/opera_access_structure.py \\) Tj
+-54 -158 Td
+/F1 10 Tf
+54 145 Td (--output-dir generated_opera_package) Tj
+-54 -145 Td
+/F1 10 Tf
+54 116 Td (Example run:) Tj
+-54 -116 Td
+/F1 10 Tf
+54 87 Td (cd generated_opera_package) Tj
+-54 -87 Td
+/F1 10 Tf
+54 74 Td (python opera_water_mask_to_cog.py \\) Tj
+-54 -74 Td
+ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 13 0 R >>
+endobj
+13 0 obj
+<< /Length 2508 >>
+stream
+BT
+/F1 10 Tf
+54 742 Td (--dest output \\) Tj
+-54 -742 Td
+/F1 10 Tf
+54 729 Td (--idx-window "0:1024,0:1024") Tj
+-54 -729 Td
+/F1 14 Tf
+54 692 Td (AI Access Planning: Phase 1) Tj
+-54 -692 Td
+/F1 10 Tf
+54 666 Td (Phase 1 introduced an optimized access planner.) Tj
+-54 -666 Td
+/F1 10 Tf
+54 645 Td (The generator builds structured evidence from the script:) Tj
+-54 -645 Td
+/F1 10 Tf
+68 624 Td (? imports) Tj
+-68 -624 Td
+/F1 10 Tf
+68 611 Td (? URLs) Tj
+-68 -611 Td
+/F1 10 Tf
+68 598 Td (? collections) Tj
+-68 -598 Td
+/F1 10 Tf
+68 585 Td (? file formats) Tj
+-68 -585 Td
+/F1 10 Tf
+68 572 Td (? operations) Tj
+-68 -572 Td
+/F1 10 Tf
+68 559 Td (? input schema) Tj
+-68 -559 Td
+/F1 10 Tf
+68 546 Td (? output schema) Tj
+-68 -546 Td
+/F1 10 Tf
+68 533 Td (? resource hints) Tj
+-68 -533 Td
+/F1 10 Tf
+68 520 Td (? static-analysis findings) Tj
+-68 -520 Td
+/F1 10 Tf
+54 499 Td (It then selects a supported access strategy.) Tj
+-54 -499 Td
+/F1 10 Tf
+54 478 Td (Supported strategies include:) Tj
+-54 -478 Td
+/F1 10 Tf
+68 457 Td (? direct_s3_xarray) Tj
+-68 -457 Td
+/F1 10 Tf
+68 444 Td (? direct_s3_h5py) Tj
+-68 -444 Td
+/F1 10 Tf
+68 431 Td (? direct_s3_rasterio) Tj
+-68 -431 Td
+/F1 10 Tf
+68 418 Td (? rasterio_windowed_read) Tj
+-68 -418 Td
+/F1 10 Tf
+68 405 Td (? zarr_open_zarr) Tj
+-68 -405 Td
+/F1 10 Tf
+68 392 Td (? virtual_zarr_access) Tj
+-68 -392 Td
+/F1 10 Tf
+68 379 Td (? harmony_subset) Tj
+-68 -379 Td
+/F1 10 Tf
+68 366 Td (? https_streaming) Tj
+-68 -366 Td
+/F1 10 Tf
+68 353 Td (? https_download_fallback) Tj
+-68 -353 Td
+/F1 10 Tf
+68 340 Td (? cmr_search_then_s3) Tj
+-68 -340 Td
+/F1 10 Tf
+54 319 Td (If OpenAI is enabled, the AI selects the strategy. If AI is unavailable or returns invalid) Tj
+-54 -319 Td
+/F1 10 Tf
+54 306 Td (output, the generator falls back to deterministic rules.) Tj
+-54 -306 Td
+/F1 10 Tf
+54 285 Td (Output:) Tj
+-54 -285 Td
+/F1 10 Tf
+54 256 Td (access_plan.json) Tj
+-54 -256 Td
+/F1 14 Tf
+54 219 Td (MCP-Ready Dataset Facts: Phase 2) Tj
+-54 -219 Td
+/F1 10 Tf
+54 193 Td (Phase 2 added MCP-ready dataset fact tools.) Tj
+-54 -193 Td
+/F1 10 Tf
+54 172 Td (These tools are implemented as local Python functions but are structured so they can be) Tj
+-54 -172 Td
+/F1 10 Tf
+54 159 Td (exposed later through a true MCP server.) Tj
+-54 -159 Td
+/F1 10 Tf
+54 138 Td (Tools include:) Tj
+-54 -138 Td
+/F1 10 Tf
+68 117 Td (? get_cmr_collection) Tj
+-68 -117 Td
+/F1 10 Tf
+68 104 Td (? get_cmr_granule) Tj
+-68 -104 Td
+/F1 10 Tf
+68 91 Td (? inspect_asset) Tj
+-68 -91 Td
+/F1 10 Tf
+68 78 Td (? check_access_options) Tj
+-68 -78 Td
+ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 15 0 R >>
+endobj
+15 0 obj
+<< /Length 2688 >>
+stream
+BT
+/F1 10 Tf
+68 742 Td (? estimate_subset_cost) Tj
+-68 -742 Td
+/F1 10 Tf
+68 729 Td (? recommend_access_pattern) Tj
+-68 -729 Td
+/F1 10 Tf
+54 708 Td (The generator writes:) Tj
+-54 -708 Td
+/F1 10 Tf
+54 679 Td (dataset_facts.json) Tj
+-54 -679 Td
+/F1 10 Tf
+54 650 Td (This file records:) Tj
+-54 -650 Td
+/F1 10 Tf
+68 629 Td (? CMR collection facts) Tj
+-68 -629 Td
+/F1 10 Tf
+68 616 Td (? CMR granule facts) Tj
+-68 -616 Td
+/F1 10 Tf
+68 603 Td (? S3 and HTTPS URLs) Tj
+-68 -603 Td
+/F1 10 Tf
+68 590 Td (? inferred asset format) Tj
+-68 -590 Td
+/F1 10 Tf
+68 577 Td (? variables and dimensions when inferable) Tj
+-68 -577 Td
+/F1 10 Tf
+68 564 Td (? available access options) Tj
+-68 -564 Td
+/F1 10 Tf
+68 551 Td (? subset-cost risk) Tj
+-68 -551 Td
+/F1 10 Tf
+68 538 Td (? recommended access patterns) Tj
+-68 -538 Td
+/F1 10 Tf
+54 517 Td (The AI planner then receives:) Tj
+-54 -517 Td
+/F1 10 Tf
+54 488 Td (static evidence + dataset facts + allowed strategies) Tj
+-54 -488 Td
+/F1 10 Tf
+54 459 Td (This makes the AI decision evidence-based instead of purely prompt-based.) Tj
+-54 -459 Td
+/F1 14 Tf
+54 430 Td (Strategy-Specific Runtime Helpers: Phase 3) Tj
+-54 -430 Td
+/F1 10 Tf
+54 404 Td (Phase 3 added generation of:) Tj
+-54 -404 Td
+/F1 10 Tf
+54 375 Td (access_runtime.py) Tj
+-54 -375 Td
+/F1 10 Tf
+54 346 Td (This file contains reusable helper functions selected from the access plan.) Tj
+-54 -346 Td
+/F1 10 Tf
+54 325 Td (Examples:) Tj
+-54 -325 Td
+/F1 10 Tf
+68 304 Td (? direct_s3_xarray generates open_xarray_dataset_from_s3\(...\)) Tj
+-68 -304 Td
+/F1 10 Tf
+68 291 Td (? direct_s3_h5py generates download_s3_asset_to_tempfile\(...\)) Tj
+-68 -291 Td
+/F1 10 Tf
+68 278 Td (? rasterio_windowed_read generates read_raster_window\(...\)) Tj
+-68 -278 Td
+/F1 10 Tf
+68 265 Td (? zarr_open_zarr generates open_zarr_dataset\(...\)) Tj
+-68 -265 Td
+/F1 10 Tf
+68 252 Td (? harmony_subset generates Harmony request helper code) Tj
+-68 -252 Td
+/F1 10 Tf
+68 239 Td (? https_download_fallback generates HTTPS download helper code) Tj
+-68 -239 Td
+/F1 10 Tf
+54 218 Td (The current Phase 3 implementation is intentionally safe: it generates helper code but does) Tj
+-54 -218 Td
+/F1 10 Tf
+54 205 Td (not rewrite the scientist's original workflow automatically.) Tj
+-54 -205 Td
+/F1 14 Tf
+54 176 Td (OpenAI Usage) Tj
+-54 -176 Td
+/F1 10 Tf
+54 150 Td (OpenAI can be used in two places:) Tj
+-54 -150 Td
+/F1 10 Tf
+54 129 Td (1. **AI access planning**) Tj
+-54 -129 Td
+/F1 10 Tf
+54 116 Td (- chooses the optimized access strategy from evidence and dataset facts) Tj
+-54 -116 Td
+/F1 10 Tf
+54 95 Td (2. **LLM package review**) Tj
+-54 -95 Td
+/F1 10 Tf
+54 82 Td (- reviews static analysis, package metadata, and access plan) Tj
+-54 -82 Td
+ET
+endstream
+endobj
+16 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 17 0 R >>
+endobj
+17 0 obj
+<< /Length 2801 >>
+stream
+BT
+/F1 10 Tf
+54 742 Td (Example:) Tj
+-54 -742 Td
+/F1 10 Tf
+54 713 Td (python3 generator/generate_package.py input/opera_access_structure.py \\) Tj
+-54 -713 Td
+/F1 10 Tf
+54 700 Td (--output-dir generated_opera_package \\) Tj
+-54 -700 Td
+/F1 10 Tf
+54 687 Td (--ai-access-planner \\) Tj
+-54 -687 Td
+/F1 10 Tf
+54 674 Td (--access-planner-provider openai \\) Tj
+-54 -674 Td
+/F1 10 Tf
+54 661 Td (--llm-analysis \\) Tj
+-54 -661 Td
+/F1 10 Tf
+54 648 Td (--llm-provider openai) Tj
+-54 -648 Td
+/F1 10 Tf
+54 619 Td (The AI is not allowed to generate arbitrary unsafe code. The selected strategy is validated) Tj
+-54 -619 Td
+/F1 10 Tf
+54 606 Td (against an allowlist before it is accepted.) Tj
+-54 -606 Td
+/F1 14 Tf
+54 577 Td (Validation and Testing) Tj
+-54 -577 Td
+/F1 10 Tf
+54 551 Td (The project includes unit tests for:) Tj
+-54 -551 Td
+/F1 10 Tf
+68 530 Td (? notebook parameter inference) Tj
+-68 -530 Td
+/F1 10 Tf
+68 517 Td (? static-analysis findings) Tj
+-68 -517 Td
+/F1 10 Tf
+68 504 Td (? manifest generation) Tj
+-68 -504 Td
+/F1 10 Tf
+68 491 Td (? OPERA-style dashed CLI arguments) Tj
+-68 -491 Td
+/F1 10 Tf
+68 478 Td (? executable .run handling) Tj
+-68 -478 Td
+/F1 10 Tf
+68 465 Td (? access evidence extraction) Tj
+-68 -465 Td
+/F1 10 Tf
+68 452 Td (? access-plan validation) Tj
+-68 -452 Td
+/F1 10 Tf
+68 439 Td (? rule-based fallback planning) Tj
+-68 -439 Td
+/F1 10 Tf
+68 426 Td (? MCP-ready dataset fact tools) Tj
+-68 -426 Td
+/F1 10 Tf
+68 413 Td (? generated access_runtime.py helpers) Tj
+-68 -413 Td
+/F1 10 Tf
+54 392 Td (Recent validation included:) Tj
+-54 -392 Td
+/F1 10 Tf
+54 363 Td (python3 -m unittest discover -s tests) Tj
+-54 -363 Td
+/F1 10 Tf
+54 350 Td (python3 generator/generate_package.py) Tj
+-54 -350 Td
+/F1 10 Tf
+54 337 Td (python3 generator/generate_package.py input/opera_access_structure.py --output-dir) Tj
+-54 -337 Td
+/F1 10 Tf
+54 324 Td (generated_opera_package) Tj
+-54 -324 Td
+/F1 10 Tf
+54 311 Td (python3 -m py_compile generator/*.py mcp_server/*.py mcp_server/tools/*.py input/*.py) Tj
+-54 -311 Td
+/F1 10 Tf
+54 298 Td (generated_package/*.py generated_opera_package/*.py) Tj
+-54 -298 Td
+/F1 10 Tf
+54 285 Td (generated_package/validate_package.sh) Tj
+-54 -285 Td
+/F1 10 Tf
+54 272 Td (generated_opera_package/validate_package.sh) Tj
+-54 -272 Td
+/F1 10 Tf
+54 243 Td (Manual NISAR smoke test successfully wrote:) Tj
+-54 -243 Td
+/F1 10 Tf
+54 214 Td (output/nisar_subset.zarr) Tj
+-54 -214 Td
+/F1 10 Tf
+54 201 Td (output/manifest.json) Tj
+-54 -201 Td
+/F1 14 Tf
+54 164 Td (Current Status) Tj
+-54 -164 Td
+/F1 10 Tf
+54 138 Td (Implemented:) Tj
+-54 -138 Td
+/F1 10 Tf
+68 117 Td (? static analysis) Tj
+-68 -117 Td
+/F1 10 Tf
+68 104 Td (? dependency inference) Tj
+-68 -104 Td
+/F1 10 Tf
+68 91 Td (? generated app manifest) Tj
+-68 -91 Td
+/F1 10 Tf
+68 78 Td (? DPS/OGC template rendering) Tj
+-68 -78 Td
+ET
+endstream
+endobj
+18 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 19 0 R >>
+endobj
+19 0 obj
+<< /Length 2337 >>
+stream
+BT
+/F1 10 Tf
+68 742 Td (? OpenAI review) Tj
+-68 -742 Td
+/F1 10 Tf
+68 729 Td (? AI access planner) Tj
+-68 -729 Td
+/F1 10 Tf
+68 716 Td (? dataset facts tools) Tj
+-68 -716 Td
+/F1 10 Tf
+68 703 Td (? MCP-ready tool dispatcher) Tj
+-68 -703 Td
+/F1 10 Tf
+68 690 Td (? generated access plan) Tj
+-68 -690 Td
+/F1 10 Tf
+68 677 Td (? generated runtime helper module) Tj
+-68 -677 Td
+/F1 10 Tf
+68 664 Td (? NISAR and OPERA examples) Tj
+-68 -664 Td
+/F1 10 Tf
+68 651 Td (? test coverage) Tj
+-68 -651 Td
+/F1 10 Tf
+54 630 Td (Not yet implemented:) Tj
+-54 -630 Td
+/F1 10 Tf
+68 609 Td (? full MCP protocol server integration) Tj
+-68 -609 Td
+/F1 10 Tf
+68 596 Td (? automatic rewriting of science code to call access_runtime.py) Tj
+-68 -596 Td
+/F1 10 Tf
+68 583 Td (? live file-structure inspection for every remote asset type) Tj
+-68 -583 Td
+/F1 10 Tf
+68 570 Td (? Harmony service execution) Tj
+-68 -570 Td
+/F1 10 Tf
+68 557 Td (? production registry publish flow) Tj
+-68 -557 Td
+/F1 14 Tf
+54 528 Td (Recommended Next Steps) Tj
+-54 -528 Td
+/F1 10 Tf
+54 502 Td (1. Expose the MCP-ready tools through a true MCP server runtime.) Tj
+-54 -502 Td
+/F1 10 Tf
+54 489 Td (2. Add richer live asset inspection for NetCDF, HDF5, Zarr, and GeoTIFF.) Tj
+-54 -489 Td
+/F1 10 Tf
+54 476 Td (3. Add Harmony capability discovery and request generation.) Tj
+-54 -476 Td
+/F1 10 Tf
+54 463 Td (4. Add optional code-rewrite mode to integrate access_runtime.py into generated scripts.) Tj
+-54 -463 Td
+/F1 10 Tf
+54 450 Td (5. Add CI tests with mocked CMR metadata fixtures.) Tj
+-54 -450 Td
+/F1 10 Tf
+54 437 Td (6. Demonstrate the full workflow on NISAR, OPERA, and a user-provided .run algorithm.) Tj
+-54 -437 Td
+/F1 14 Tf
+54 408 Td (Conclusion) Tj
+-54 -408 Td
+/F1 10 Tf
+54 382 Td (This project demonstrates a practical path from user science code to generated OGC/DPS) Tj
+-54 -382 Td
+/F1 10 Tf
+54 369 Td (application packages. It combines deterministic static analysis, reusable templates,) Tj
+-54 -369 Td
+/F1 10 Tf
+54 356 Td (AI-assisted access planning, MCP-ready metadata tools, and validated package generation.) Tj
+-54 -356 Td
+/F1 10 Tf
+54 335 Td (The most important design principle is that AI helps choose and explain the strategy, but) Tj
+-54 -335 Td
+/F1 10 Tf
+54 322 Td (deterministic validation and templates keep the generated package safe and reproducible.) Tj
+-54 -322 Td
+ET
+endstream
+endobj
+xref
+0 20
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000162 00000 n 
+0000000232 00000 n 
+0000000358 00000 n 
+0000003670 00000 n 
+0000003796 00000 n 
+0000006268 00000 n 
+0000006394 00000 n 
+0000009050 00000 n 
+0000009178 00000 n 
+0000011704 00000 n 
+0000011832 00000 n 
+0000014393 00000 n 
+0000014521 00000 n 
+0000017262 00000 n 
+0000017390 00000 n 
+0000020244 00000 n 
+0000020372 00000 n 
+trailer
+<< /Size 20 /Root 1 0 R >>
+startxref
+22762
+%%EOF
