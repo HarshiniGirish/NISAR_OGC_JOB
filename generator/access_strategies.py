@@ -64,6 +64,12 @@ ALLOWED_STRATEGIES: dict[str, dict[str, Any]] = {
         "valid_formats": ["netcdf", "hdf5", "geotiff", "zarr"],
         "template_hint": "cmr_to_s3",
     },
+    "stac_raster_api": {
+        "description": "Use a STAC API to find items and a raster/titiler API to request TileJSON or rendered assets.",
+        "required_dependencies": ["pystac-client", "requests"],
+        "valid_formats": ["tilejson", "geotiff", "cog"],
+        "template_hint": "stac_raster_tilejson",
+    },
 }
 
 

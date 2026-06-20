@@ -72,6 +72,8 @@ def infer_file_formats(urls: list[str], imports: list[str], source: str) -> set[
         formats.add("hdf5")
     if ".tif" in suffixes or ".tiff" in suffixes:
         formats.add("geotiff")
+    if "tilejson" in source or any("tilejson" in url.lower() for url in urls):
+        formats.add("tilejson")
     if any(".zarr" in url.lower() for url in urls) or "open_zarr" in source or "to_zarr" in source:
         formats.add("zarr")
     if "rasterio" in imports or "rioxarray" in imports or "driver=\"COG\"" in source or "driver='COG'" in source:
@@ -98,5 +100,9 @@ def infer_operations(source: str, imports: list[str], app_config: dict[str, Any]
         operations.add("direct_s3")
     if "https://" in source:
         operations.add("https_access")
+    if "pystac_client" in imports or "Client.open" in source or "STAC_API" in source:
+        operations.add("stac_search")
+    if "tilejson" in source or "RASTER_API" in source or "/api/raster" in source:
+        operations.add("raster_api")
 
     return operations

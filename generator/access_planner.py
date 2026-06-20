@@ -105,7 +105,15 @@ def rule_based_access_plan(evidence: dict[str, Any], dataset_facts: dict[str, An
         or access_options.get("direct_s3", False)
     )
 
-    if has_s3 and "netcdf" in formats and ("xarray" in imports or "write_cog" in operations):
+    if "raster_api" in operations or access_options.get("raster_api", False):
+        strategy = "stac_raster_api"
+        reason = "Detected STAC/Raster API access where TileJSON or rendered assets should be requested server-side."
+        hints = [
+            "Use STAC to select the item for the requested collection/date.",
+            "Use the raster API TileJSON endpoint instead of downloading source rasters.",
+            "Persist tilejson/manifest outputs for downstream visualization or OGC packaging.",
+        ]
+    elif has_s3 and "netcdf" in formats and ("xarray" in imports or "write_cog" in operations):
         strategy = "direct_s3_xarray"
         reason = "Detected S3 NetCDF access with xarray-compatible processing."
         if dataset_facts:

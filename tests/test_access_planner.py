@@ -106,6 +106,46 @@ with h5py.File("granule.h5") as h5f:
         self.assertEqual(plan["chosen_strategy"], "direct_s3_xarray")
         self.assertFalse(plan["fallback_used"])
 
+    def test_veda_black_marble_recommends_stac_raster_api(self) -> None:
+        source_info = {
+            "kind": "script",
+            "path": "input/black_marble_veda.py",
+            "source": """
+import requests
+from pystac_client import Client
+STAC_API_URL = "https://openveda.cloud/api/stac"
+RASTER_API_URL = "https://openveda.cloud/api/raster"
+client = Client.open(STAC_API_URL)
+response = requests.get(f"{RASTER_API_URL}/collections/lakeview-nightlights-tornadoes-2024/items/item/WebMercatorQuad/tilejson.json")
+""",
+        }
+        evidence = build_access_evidence(
+            source_info=source_info,
+            app_config={
+                "entrypoint": "black_marble_veda.py",
+                "inputs": {"collection_id": {"default": "lakeview-nightlights-tornadoes-2024"}},
+                "outputs": {},
+            },
+            analysis={
+                "data_access": {
+                    "s3": [],
+                    "cmr": [],
+                    "stac": [{"evidence": "https://openveda.cloud/api/stac"}],
+                    "local": [],
+                },
+                "issues": [],
+            },
+            detected_imports=["requests", "pystac_client"],
+        )
+        plan = rule_based_access_plan(
+            evidence,
+            {"access_options": {"raster_api": True}, "asset_inspection": {"format": "tilejson"}},
+        )
+
+        self.assertIn("raster_api", evidence["operations"])
+        self.assertIn("tilejson", evidence["file_formats"])
+        self.assertEqual(plan["chosen_strategy"], "stac_raster_api")
+
 
 if __name__ == "__main__":
     unittest.main()

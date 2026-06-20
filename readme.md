@@ -205,6 +205,37 @@ The generated output is a subsetted NISAR Zarr data store plus a manifest file t
 
 ---
 
+## 2.6 Generate and Run Black Marble VEDA Package
+
+The Black Marble example uses the public VEDA STAC API and Raster API to request TileJSON for a NASA Black Marble Nightlights layer. It writes `black_marble_tilejson.json` and `manifest.json`.
+
+Generate the package:
+
+```bash
+python3 generator/generate_package.py input/black_marble_veda.py \
+  --output-dir generated_black_marble_package
+```
+
+Run the generated package:
+
+```bash
+cd generated_black_marble_package
+python black_marble_veda.py --dest output
+```
+
+Useful defaults:
+
+| Parameter | Default |
+|---|---|
+| `collection_id` | `lakeview-nightlights-tornadoes-2024` |
+| `date` | `2024-03-14` |
+| `stac_api_url` | `https://openveda.cloud/api/stac` |
+| `raster_api_url` | `https://openveda.cloud/api/raster` |
+
+The access planner should select `stac_raster_api` for this workflow.
+
+---
+
 ## 3. Repository Structure and Generated Files
 
 | Artifact | User provides it? | Created by generator? | Purpose |
