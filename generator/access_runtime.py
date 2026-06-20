@@ -18,6 +18,7 @@ def build_access_runtime_module(access_plan: dict[str, Any], dataset_facts: dict
         "https_streaming": HTTPS_HELPER,
         "https_download_fallback": HTTPS_HELPER,
         "cmr_search_then_s3": CMR_TO_S3_HELPER,
+        "stac_raster_api": STAC_RASTER_API_HELPER,
     }
     helper = helpers.get(strategy, HTTPS_HELPER)
     header = f'''#!/usr/bin/env python3
@@ -196,4 +197,55 @@ def choose_preferred_s3_url(related_urls: list[str]) -> str:
         if str(url).startswith("s3://"):
             return str(url)
     raise ValueError("No s3:// URL found in related URLs.")
+'''
+
+
+STAC_RASTER_API_HELPER = '''
+def fetch_stac_item_tilejson(
+    *,
+    stac_api_url: str,
+    raster_api_url: str,
+    collection_id: str,
+    date: str,
+    assets: str | None = None,
+    rescale: str | None = None,
+    colormap_name: str | None = None,
+) -> dict:
+    """Find a STAC item and request TileJSON from a VEDA/titiler-style Raster API."""
+    import requests
+    from pystac_client import Client
+
+    client = Client.open(stac_api_url)
+    results = client.search(collections=[collection_id], datetime=date)
+    items = list(results.items())
+    if not items:
+        raise RuntimeError(f"No STAC items found for {collection_id} at {date}")
+
+    item = items[0]
+    collection = item.get_collection()
+    if assets is None:
+        render = collection.extra_fields.get("renders", {}).get("dashboard", {})
+        render_assets = render.get("assets") or []
+        assets = render_assets[0] if render_assets else next(iter(item.assets))
+        if rescale is None and render.get("rescale"):
+            first_rescale = render["rescale"][0]
+            rescale = f"{first_rescale[0]},{first_rescale[1]}"
+
+    params = {"assets": assets}
+    if rescale:
+        params["rescale"] = rescale
+    if colormap_name:
+        params["colormap_name"] = colormap_name
+
+    url = (
+        f"{raster_api_url.rstrip('/')}/collections/{collection_id}"
+        f"/items/{item.id}/WebMercatorQuad/tilejson.json"
+    )
+    response = requests.get(url, params=params, timeout=60)
+    response.raise_for_status()
+    tilejson = response.json()
+    tilejson["_stac_item_id"] = item.id
+    tilejson["_collection_id"] = collection_id
+    tilejson["_assets"] = assets
+    return tilejson
 '''

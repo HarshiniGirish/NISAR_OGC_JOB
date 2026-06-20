@@ -67,6 +67,8 @@ def recommend_access_pattern(
     direct_s3 = options.get("direct_s3", False)
     recommendations: list[str] = []
 
+    if options.get("raster_api") or "raster_api" in evidence.get("operations", []):
+        recommendations.append("stac_raster_api")
     if direct_s3 and file_format in {"netcdf", "zarr"}:
         recommendations.append("direct_s3_xarray")
     if direct_s3 and file_format == "hdf5":

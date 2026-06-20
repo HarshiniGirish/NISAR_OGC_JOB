@@ -48,6 +48,25 @@ class AccessRuntimeTests(unittest.TestCase):
         self.assertIn("xarray", dependencies["conda"])
         self.assertEqual(dependencies["pip"], [])
 
+    def test_stac_raster_api_runtime_helper_is_rendered(self) -> None:
+        module = build_access_runtime_module(
+            {
+                "chosen_strategy": "stac_raster_api",
+                "source": "rule_based",
+                "implementation_hints": ["Use raster API TileJSON endpoint."],
+                "warnings": [],
+            },
+            {
+                "source": "mcp_ready_local_tools",
+                "asset_inspection": {"format": "tilejson", "variables": []},
+                "access_options": {"stac": True, "raster_api": True},
+            },
+        )
+
+        self.assertIn('ACCESS_STRATEGY = "stac_raster_api"', module)
+        self.assertIn("def fetch_stac_item_tilejson", module)
+        self.assertIn("Client.open", module)
+
 
 if __name__ == "__main__":
     unittest.main()
