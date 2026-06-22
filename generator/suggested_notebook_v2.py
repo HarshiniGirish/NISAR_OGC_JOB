@@ -12,6 +12,7 @@ PARAMETER_ORDER = [
     "bbox",
     "datetime",
     "asset_href",
+    "asset_key",
     "group",
     "variables",
     "output_dir",
@@ -199,6 +200,7 @@ def _discovery_source() -> str:
         "        'short_name': short_name,\n"
         "        'collection_id': collection_id,\n"
         "        'asset_href': asset_href,\n"
+        "        'asset_key': asset_key,\n"
         "        'bbox': bbox,\n"
         "        'datetime': datetime,\n"
         "    }\n\n"
@@ -210,7 +212,7 @@ def _access_source() -> str:
     return (
         "# Compatibility aliases for common STAC/TiTiler tutorial variable names.\n"
         "collection = globals().get('collection', '') or collection_id or short_name\n"
-        "item = globals().get('item', '') or asset_key\n"
+        "item = globals().get('item', '') or globals().get('asset_key', '')\n"
         "stac_endpoint = globals().get('stac_endpoint', '')\n"
         "titiler_endpoint = globals().get('titiler_endpoint', '')\n\n"
         "def open_input_asset(discovery):\n"
@@ -250,11 +252,11 @@ def _transform_source(source: str) -> str:
     transformed = source.replace('"/tmp/', '"output/tmp_').replace("'/tmp/", "'output/tmp_")
     transformed = transformed.replace(
         "items_response['assets']['mean']['href']",
-        "extract_asset_href(items_response, asset_key or 'mean', asset_href or input_asset)",
+        "extract_asset_href(items_response, globals().get('asset_key', '') or 'mean', asset_href or input_asset)",
     )
     transformed = transformed.replace(
         'items_response["assets"]["mean"]["href"]',
-        "extract_asset_href(items_response, asset_key or 'mean', asset_href or input_asset)",
+        "extract_asset_href(items_response, globals().get('asset_key', '') or 'mean', asset_href or input_asset)",
     )
     if "output_dir" not in transformed and "to_" in transformed:
         transformed = "# Review output paths: write generated files under output_dir.\n" + transformed
@@ -307,6 +309,7 @@ def _default_for(name: str) -> Any:
     return {
         "bbox": "",
         "datetime": "",
+        "asset_key": "",
         "variables": "",
         "output_dir": "output",
         "access_mode": "auto",
