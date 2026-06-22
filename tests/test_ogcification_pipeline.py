@@ -186,12 +186,14 @@ def process():
                 if cell.get("cell_type") == "code"
             )
             self.assertIn("import requests", suggested_source)
+            self.assertIn("asset_key = ''", suggested_source)
             self.assertIn(0, report["preserved_setup_cells"])
 
     def test_suggested_notebook_v2_rewrites_brittle_stac_asset_lookup(self) -> None:
         transformed = _transform_source("url = items_response['assets']['mean']['href']\n")
 
         self.assertIn("extract_asset_href", transformed)
+        self.assertIn("globals().get('asset_key', '')", transformed)
         self.assertNotIn("['assets']['mean']['href']", transformed)
 
     def test_generator_cli_emits_new_artifacts(self) -> None:
