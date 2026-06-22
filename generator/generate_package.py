@@ -26,10 +26,23 @@ try:
     from .access_evidence import build_access_evidence
     from .access_planner import plan_access
     from .access_runtime import build_access_runtime_module
+    from .dependency_graph import build_dependency_graph, write_dependency_graph
+    from .dps_readiness_scan import scan_dps_readiness, write_readiness_reports
+    from .final_report import append_final_report_to_report_md, build_final_report, write_final_report
+    from .llm_recommendations import build_structured_recommendations
+    from .ogc_validator import validate_generated_package, write_validation_reports
+    from .suggested_notebook_v2 import emit_suggested_notebook_v2
 except ImportError:
     from access_evidence import build_access_evidence
     from access_planner import plan_access
     from access_runtime import build_access_runtime_module
+    from dependency_graph import build_dependency_graph, write_dependency_graph
+    from dps_readiness_scan import scan_dps_readiness, write_readiness_reports
+    from final_report import append_final_report_to_report_md, build_final_report, write_final_report
+    from llm_recommendations import build_structured_recommendations
+    from ogc_validator import validate_generated_package, write_validation_reports
+    from suggested_notebook_v2 import emit_suggested_notebook_v2
+from mcp_server.tools.default_resolver import resolve_default_values
 from mcp_server.tools.recommendation import build_dataset_facts
 
 
@@ -2026,6 +2039,12 @@ def parse_cli_args() -> argparse.Namespace:
         help="Python script or .ipynb notebook to package. Defaults to input/nisar_access_subset.py.",
     )
     parser.add_argument(
+        "--input",
+        dest="input_path",
+        default="",
+        help="Python script or .ipynb notebook to package. Overrides the positional script argument.",
+    )
+    parser.add_argument(
         "--manifest",
         default="",
         help="Optional app.yaml/app.yml metadata override. Not required; generated app.yaml is always emitted.",
@@ -2068,6 +2087,49 @@ def parse_cli_args() -> argparse.Namespace:
         help="Allow dataset fact tools to make live CMR metadata requests. Defaults to offline inference.",
     )
     parser.add_argument(
+        "--scan-dps-readiness",
+        action="store_true",
+        help="Emit DPS-readiness JSON/Markdown reports for cells, functions, and code blocks.",
+    )
+    parser.add_argument(
+        "--use-mcp-defaults",
+        action="store_true",
+        help="Use MCP-ready metadata tools to suggest missing runtime defaults with provenance.",
+    )
+    parser.add_argument(
+        "--maap-stac-url",
+        default=os.environ.get(
+            "MAAP_STAC_URL",
+            "https://stac-browser.maap-project.org/?.language=en",
+        ),
+        help="MAAP STAC endpoint/browser context used by metadata/default-value resolution.",
+    )
+    parser.add_argument(
+        "--llm-recommendations",
+        action="store_true",
+        help="Ask the LLM for structured DPS/OGCification recommendations, with schema validation.",
+    )
+    parser.add_argument(
+        "--build-dependency-graph",
+        action="store_true",
+        help="Emit dependency_graph.json combining imports, mappings, implicit deps, and validation.",
+    )
+    parser.add_argument(
+        "--validate-ogc",
+        action="store_true",
+        help="Emit structured OGC/MAAP/CWL readiness validation reports after generation.",
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Let the validator run a lightweight local run.sh --help smoke test.",
+    )
+    parser.add_argument(
+        "--emit-suggested-notebook-v2",
+        action="store_true",
+        help="For notebook inputs, emit suggested_notebook_v2.ipynb and comparison reports.",
+    )
+    parser.add_argument(
         "--llm-provider",
         default=os.environ.get("LLM_PROVIDER", "auto"),
         choices=["auto", "openai", "anthropic"],
@@ -2093,7 +2155,7 @@ def parse_cli_args() -> argparse.Namespace:
 
 def main() -> None:
     cli_args = parse_cli_args()
-    script_path = Path(cli_args.script)
+    script_path = Path(cli_args.input_path or cli_args.script)
     if not script_path.is_absolute():
         script_path = ROOT / script_path
     script_path = script_path.resolve()
@@ -2170,6 +2232,46 @@ def main() -> None:
         model=cli_args.access_planner_model,
     )
     dependencies = add_access_plan_dependencies(dependencies, access_plan)
+    dps_readiness_scan = (
+        scan_dps_readiness(script_path, inputs)
+        if cli_args.scan_dps_readiness or cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2
+        else {}
+    )
+    mcp_default_suggestions = (
+        resolve_default_values(
+            evidence=access_evidence,
+            dataset_facts=dataset_facts,
+            user_config=app_config,
+            stac_url=cli_args.maap_stac_url,
+        )
+        if cli_args.use_mcp_defaults or cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2
+        else {}
+    )
+    if mcp_default_suggestions:
+        dataset_facts["default_suggestions"] = mcp_default_suggestions
+    dependency_graph = (
+        build_dependency_graph(
+            detected_imports=detected_imports,
+            dependency_map=dependency_map,
+            implicit_dependencies=implicit_dependencies,
+            resolved_dependencies=dependencies,
+            source=source_info["source"],
+        )
+        if cli_args.build_dependency_graph or cli_args.llm_recommendations
+        else {}
+    )
+    structured_llm_recommendations = (
+        build_structured_recommendations(
+            readiness_scan=dps_readiness_scan,
+            mcp_defaults=mcp_default_suggestions,
+            dependency_graph=dependency_graph,
+            enabled=cli_args.llm_recommendations,
+            provider=cli_args.llm_provider,
+            model=cli_args.llm_model or cli_args.openai_model,
+        )
+        if cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2
+        else {}
+    )
     llm_prompt = build_llm_prompt(app_config, analysis, dataset_facts, access_plan)
     llm_analysis = run_llm_analysis(
         llm_prompt,
@@ -2281,6 +2383,74 @@ def main() -> None:
         make_executable(output_dir / "publish_ogc.py")
         generated_files.append("publish_ogc.py")
 
+    if cli_args.scan_dps_readiness:
+        generated_files.extend(write_readiness_reports(dps_readiness_scan, output_dir))
+
+    if cli_args.use_mcp_defaults:
+        write_text(output_dir / "mcp_default_suggestions.json", json.dumps(mcp_default_suggestions, indent=2) + "\n")
+        generated_files.append("mcp_default_suggestions.json")
+
+    if cli_args.build_dependency_graph:
+        generated_files.append(write_dependency_graph(dependency_graph, output_dir))
+
+    if cli_args.llm_recommendations:
+        write_text(
+            output_dir / "llm_recommendations.json",
+            json.dumps(structured_llm_recommendations, indent=2) + "\n",
+        )
+        generated_files.append("llm_recommendations.json")
+
+    notebook_v2_report: dict[str, Any] = {}
+    if cli_args.emit_suggested_notebook_v2:
+        notebook_v2_report = emit_suggested_notebook_v2(
+            script_path,
+            output_dir,
+            readiness_scan=dps_readiness_scan,
+            recommendations=structured_llm_recommendations,
+            mcp_defaults=mcp_default_suggestions,
+        )
+        if notebook_v2_report.get("status") == "created":
+            generated_files.extend(
+                [
+                    "suggested_notebook_v2.ipynb",
+                    "notebook_v2_diff_report.json",
+                    "notebook_v2_diff_report.md",
+                ]
+            )
+
+    ogc_validation_report: dict[str, Any] = {}
+    if cli_args.validate_ogc:
+        ogc_validation_report = validate_generated_package(
+            output_dir,
+            target=app_config["target"],
+            readiness_scan=dps_readiness_scan,
+            run_smoke_test=cli_args.smoke_test,
+        )
+        generated_files.extend(write_validation_reports(ogc_validation_report, output_dir))
+
+    final_readiness_report = build_final_report(
+        readiness_scan=dps_readiness_scan,
+        llm_recommendations=structured_llm_recommendations,
+        mcp_defaults=mcp_default_suggestions,
+        dependency_graph=dependency_graph,
+        dataset_facts=dataset_facts,
+        access_plan=access_plan,
+        generated_files=generated_files,
+        validation_report=ogc_validation_report,
+        notebook_v2_report=notebook_v2_report,
+    )
+    if any(
+        [
+            cli_args.scan_dps_readiness,
+            cli_args.use_mcp_defaults,
+            cli_args.llm_recommendations,
+            cli_args.build_dependency_graph,
+            cli_args.validate_ogc,
+            cli_args.emit_suggested_notebook_v2,
+        ]
+    ):
+        generated_files.append(write_final_report(final_readiness_report, output_dir))
+
     readme = f"""# {name}
 
 This application package was generated from a Python script or notebook by the package generator proof of concept.
@@ -2355,13 +2525,28 @@ For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`)
         dependencies,
         generated_files,
     )
+    if any(
+        [
+            cli_args.scan_dps_readiness,
+            cli_args.use_mcp_defaults,
+            cli_args.llm_recommendations,
+            cli_args.build_dependency_graph,
+            cli_args.validate_ogc,
+            cli_args.emit_suggested_notebook_v2,
+        ]
+    ):
+        report = append_final_report_to_report_md(report, final_readiness_report)
     write_text(output_dir / "report.md", report)
 
     make_executable(output_dir / "run.sh")
 
     print("Generated package files:")
     for file_name in generated_files:
-        print(f" - {output_dir.relative_to(ROOT)}/{file_name}")
+        try:
+            output_label = output_dir.relative_to(ROOT)
+        except ValueError:
+            output_label = output_dir
+        print(f" - {output_label}/{file_name}")
 
 
 if __name__ == "__main__":
