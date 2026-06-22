@@ -159,6 +159,16 @@ def process():
         notebook = {
             "cells": [
                 {"cell_type": "code", "metadata": {}, "source": ["import requests\n"]},
+                {
+                    "cell_type": "code",
+                    "metadata": {},
+                    "source": ["ALGORITHM_CATALOG = []\n", "def build_job_result():\n", "    return {}\n"],
+                },
+                {
+                    "cell_type": "code",
+                    "metadata": {},
+                    "source": ["job_result = build_job_result()\n"],
+                },
                 {"cell_type": "code", "metadata": {}, "source": ["print('science')\n"]},
             ],
             "metadata": {},
@@ -187,8 +197,11 @@ def process():
                 if cell.get("cell_type") == "code"
             )
             self.assertIn("import requests", suggested_source)
+            self.assertIn("def build_job_result", suggested_source)
+            self.assertIn("job_result = build_job_result()", suggested_source)
             self.assertIn("asset_key = ''", suggested_source)
             self.assertIn(0, report["preserved_setup_cells"])
+            self.assertIn(1, report["preserved_setup_cells"])
 
     def test_suggested_notebook_v2_rewrites_brittle_stac_asset_lookup(self) -> None:
         transformed = _transform_source("url = items_response['assets']['mean']['href']\n")

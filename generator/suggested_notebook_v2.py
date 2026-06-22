@@ -238,6 +238,16 @@ def _build_v2_cells(
             cells.append(_markdown_cell(f"### Preserved setup/import cell {index}"))
             cells.append(_code_cell(_transform_setup_source(source)))
             continue
+        if _is_helper_cell(source):
+            preserved_setup_cells.append(index)
+            cells.append(_markdown_cell(f"### Preserved helper/function cell {index}"))
+            cells.append(_code_cell(_transform_setup_source(source)))
+            continue
+        if _is_job_execution_cell(source):
+            changed_cells.append(index)
+            cells.append(_markdown_cell(f"### Preserved job execution cell {index}\n\nDPS note: this cell creates runtime job outputs."))
+            cells.append(_code_cell(_transform_source(source)))
+            continue
         if index in notebook_only:
             skipped_cells.append(index)
             continue
@@ -564,6 +574,64 @@ def _is_setup_cell(source: str) -> bool:
     if any(marker in source_lower for marker in ("plt.show", "folium.", "requests.get", "client.open")):
         return False
     return len(executable_calls) <= 2
+
+
+def _is_helper_cell(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    if not tree.body:
+        return False
+    has_function_or_class = any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for node in tree.body)
+    has_uppercase_catalog = any(
+        isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id.isupper() for target in node.targets)
+        for node in tree.body
+    )
+    if not (has_function_or_class or has_uppercase_catalog):
+        return False
+    source_lower = source.lower()
+    if any(marker in source_lower for marker in ("plt.show", "folium.map", "display(")):
+        return False
+    return True
+
+
+def _is_job_execution_cell(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    assigned = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                assigned.update(_assigned_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            assigned.update(_assigned_names(node.target))
+    return bool(
+        assigned.intersection(
+            {
+                "job_result",
+                "items_response",
+                "collection_metadata",
+                "written_outputs",
+                "selected_algorithm",
+                "ranked_algorithms",
+            }
+        )
+    )
+
+
+def _assigned_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, (ast.Tuple, ast.List)):
+        names: set[str] = set()
+        for item in node.elts:
+            names.update(_assigned_names(item))
+        return names
+    return set()
 
 
 def _defaults_by_parameter(mcp_defaults: dict[str, Any]) -> dict[str, Any]:
