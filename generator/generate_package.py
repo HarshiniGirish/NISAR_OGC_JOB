@@ -972,6 +972,7 @@ def build_cwl_workflow_inputs_block(inputs: dict[str, Any]) -> str:
 
     for name, config in inputs.items():
         input_type = config.get("type", "string")
+        description = config.get("description") or f"Runtime parameter `{name}`."
         cwl_type_map = {
             "int": "int",
             "integer": "int",
@@ -980,7 +981,10 @@ def build_cwl_workflow_inputs_block(inputs: dict[str, Any]) -> str:
             "boolean": "boolean",
             "bool": "boolean",
         }
-        lines.append(f"  {name}: {cwl_type_map.get(input_type, 'string')}")
+        lines.append(f"  {name}:")
+        lines.append(f"    label: {quote_yaml_string(name)}")
+        lines.append(f"    doc: {quote_yaml_string(description)}")
+        lines.append(f"    type: {cwl_type_map.get(input_type, 'string')}")
 
     return "\n".join(lines) if lines else "  {}"
 
@@ -1355,8 +1359,13 @@ def build_validation_script(target: str, cwl_file_name: str) -> str:
 if command -v cwltool >/dev/null 2>&1; then
   cwltool --validate "{cwl_file_name}"
   cwltool --validate workflow.cwl
+  cwltool --pack workflow.cwl > application-package.cwl
+  cwltool --validate application-package.cwl
 else
   echo "cwltool not installed; skipping CWL validation."
+fi
+if command -v ap-validator >/dev/null 2>&1 && [ -f application-package.cwl ]; then
+  ap-validator --format json --detail all application-package.cwl > ogc_ap_validation.json || true
 fi
 '''
     else:
@@ -1825,6 +1834,41 @@ else
 {local_entrypoint_validation}
 fi
 """
+
+
+def write_packed_application_package(output_dir: Path, version: str = "main") -> str | None:
+    cwltool_path = shutil.which("cwltool")
+    workflow_path = output_dir / "workflow.cwl"
+    if cwltool_path is None or not workflow_path.exists():
+        return None
+
+    result = subprocess.run(
+        [cwltool_path, "--pack", str(workflow_path)],
+        cwd=output_dir,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    packed_text = add_ogc_ap_metadata(result.stdout, version)
+    write_text(output_dir / "application-package.cwl", packed_text)
+    return "application-package.cwl"
+
+
+def add_ogc_ap_metadata(cwl_text: str, version: str) -> str:
+    try:
+        packed = yaml.safe_load(cwl_text) or {}
+    except yaml.YAMLError:
+        return cwl_text
+    namespaces = packed.get("$namespaces")
+    if not isinstance(namespaces, dict):
+        namespaces = {}
+    namespaces.setdefault("s", "https://schema.org/")
+    packed["$namespaces"] = namespaces
+    packed.setdefault("s:softwareVersion", str(version))
+    return yaml.safe_dump(packed, sort_keys=False)
 
 
 def build_report(
@@ -2382,6 +2426,9 @@ def main() -> None:
         write_text(output_dir / "publish_ogc.py", build_ogc_publish_script())
         make_executable(output_dir / "publish_ogc.py")
         generated_files.append("publish_ogc.py")
+        packed_cwl = write_packed_application_package(output_dir, version)
+        if packed_cwl:
+            generated_files.append(packed_cwl)
 
     if cli_args.scan_dps_readiness:
         generated_files.extend(write_readiness_reports(dps_readiness_scan, output_dir))

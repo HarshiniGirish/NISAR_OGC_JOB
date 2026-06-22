@@ -1,6 +1,11 @@
 cwlVersion: v1.2
 class: CommandLineTool
+id: application
 label: {{ name }}
+
+requirements:
+  DockerRequirement:
+    dockerPull: {{ base_container }}
 
 baseCommand:
   - /opt/app/run.sh
