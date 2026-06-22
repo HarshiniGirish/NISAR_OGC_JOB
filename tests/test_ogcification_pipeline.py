@@ -17,6 +17,7 @@ from generator.llm_recommendations import (
 )
 from generator.ogc_validator import validate_generated_package
 from generator.suggested_notebook_v2 import emit_suggested_notebook_v2
+from generator.suggested_notebook_v2 import _transform_source
 from mcp_server.tools.default_resolver import resolve_default_values
 
 
@@ -156,6 +157,7 @@ def process():
     def test_suggested_notebook_v2_is_non_destructive(self) -> None:
         notebook = {
             "cells": [
+                {"cell_type": "code", "metadata": {}, "source": ["import requests\n"]},
                 {"cell_type": "code", "metadata": {}, "source": ["print('science')\n"]},
             ],
             "metadata": {},
@@ -177,6 +179,20 @@ def process():
             self.assertEqual(path.read_text(encoding="utf-8"), original_text)
             self.assertTrue(Path(report["suggested_v2_notebook_path"]).exists())
             self.assertTrue((Path(tmpdir) / "notebook_v2_diff_report.json").exists())
+            suggested = json.loads(Path(report["suggested_v2_notebook_path"]).read_text(encoding="utf-8"))
+            suggested_source = "\n".join(
+                "".join(cell.get("source", []))
+                for cell in suggested["cells"]
+                if cell.get("cell_type") == "code"
+            )
+            self.assertIn("import requests", suggested_source)
+            self.assertIn(0, report["preserved_setup_cells"])
+
+    def test_suggested_notebook_v2_rewrites_brittle_stac_asset_lookup(self) -> None:
+        transformed = _transform_source("url = items_response['assets']['mean']['href']\n")
+
+        self.assertIn("extract_asset_href", transformed)
+        self.assertNotIn("['assets']['mean']['href']", transformed)
 
     def test_generator_cli_emits_new_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
