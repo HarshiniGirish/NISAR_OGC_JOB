@@ -17,6 +17,7 @@ from generator.llm_recommendations import (
 )
 from generator.ogc_validator import validate_generated_package
 from generator.suggested_notebook_v2 import emit_suggested_notebook_v2
+from generator.suggested_notebook_v2 import _transform_source
 from mcp_server.tools.default_resolver import resolve_default_values
 
 
@@ -186,6 +187,12 @@ def process():
             )
             self.assertIn("import requests", suggested_source)
             self.assertIn(0, report["preserved_setup_cells"])
+
+    def test_suggested_notebook_v2_rewrites_brittle_stac_asset_lookup(self) -> None:
+        transformed = _transform_source("url = items_response['assets']['mean']['href']\n")
+
+        self.assertIn("extract_asset_href", transformed)
+        self.assertNotIn("['assets']['mean']['href']", transformed)
 
     def test_generator_cli_emits_new_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

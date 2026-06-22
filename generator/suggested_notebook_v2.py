@@ -208,12 +208,28 @@ def _discovery_source() -> str:
 
 def _access_source() -> str:
     return (
+        "# Compatibility aliases for common STAC/TiTiler tutorial variable names.\n"
+        "collection = globals().get('collection', '') or collection_id or short_name\n"
+        "item = globals().get('item', '') or asset_key\n"
+        "stac_endpoint = globals().get('stac_endpoint', '')\n"
+        "titiler_endpoint = globals().get('titiler_endpoint', '')\n\n"
         "def open_input_asset(discovery):\n"
         "    \"\"\"Open or stage input data according to access_mode.\"\"\"\n"
         "    href = discovery.get('asset_href') or asset_href\n"
-        "    if not href:\n"
-        "        raise ValueError('asset_href must be resolved before DPS execution')\n"
         "    return href\n\n"
+        "def extract_asset_href(item_response, preferred_asset_key='mean', fallback_href=''):\n"
+        "    \"\"\"Safely resolve an asset href from STAC item JSON without crashing a DPS run.\"\"\"\n"
+        "    if not isinstance(item_response, dict):\n"
+        "        print('Warning: STAC item response is not a JSON object; using fallback asset_href.')\n"
+        "        return fallback_href\n"
+        "    assets = item_response.get('assets') or {}\n"
+        "    if not isinstance(assets, dict) or not assets:\n"
+        "        print('Warning: STAC item response has no assets; using fallback asset_href.')\n"
+        "        return fallback_href\n"
+        "    asset = assets.get(preferred_asset_key) or next(iter(assets.values()))\n"
+        "    if isinstance(asset, dict):\n"
+        "        return asset.get('href', fallback_href)\n"
+        "    return fallback_href\n\n"
         "input_asset = open_input_asset(discovery)\n"
     )
 
@@ -232,6 +248,14 @@ def _output_source() -> str:
 
 def _transform_source(source: str) -> str:
     transformed = source.replace('"/tmp/', '"output/tmp_').replace("'/tmp/", "'output/tmp_")
+    transformed = transformed.replace(
+        "items_response['assets']['mean']['href']",
+        "extract_asset_href(items_response, asset_key or 'mean', asset_href or input_asset)",
+    )
+    transformed = transformed.replace(
+        'items_response["assets"]["mean"]["href"]',
+        "extract_asset_href(items_response, asset_key or 'mean', asset_href or input_asset)",
+    )
     if "output_dir" not in transformed and "to_" in transformed:
         transformed = "# Review output paths: write generated files under output_dir.\n" + transformed
     return transformed.rstrip() + "\n"
