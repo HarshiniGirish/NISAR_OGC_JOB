@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 import shutil
@@ -66,6 +67,11 @@ def validate_generated_package(
         blocking.append("CWL validation failed.")
     elif cwl_result["status"] == "skipped" and _target_includes(target, "ogc"):
         warnings.append("cwltool is not installed; CWL validation was skipped.")
+    ap_result = _validate_ogc_application_package(path)
+    if ap_result["status"] == "failed":
+        blocking.append("OGC Application Package validation failed.")
+    elif ap_result["status"] == "skipped" and _target_includes(target, "ogc"):
+        warnings.append("ap-validator is not installed; OGC Application Package validation was skipped.")
 
     smoke_result = _run_smoke_test(path) if run_smoke_test else {"status": "not_requested"}
     if smoke_result["status"] == "failed":
@@ -79,10 +85,17 @@ def validate_generated_package(
         next_actions.append("Package is structurally ready for review, smoke testing, and registration.")
 
     return {
-        "ogc_ready": _target_includes(target, "ogc") and not blocking and cwl_result["valid"],
+        "ogc_ready": (
+            _target_includes(target, "ogc")
+            and not blocking
+            and cwl_result["valid"]
+            and ap_result["valid"]
+        ),
         "maap_dps_ready": _target_includes(target, "dps") and not blocking,
         "cwl_valid": cwl_result["valid"],
+        "ogc_application_package_valid": ap_result["valid"],
         "cwl_validation": cwl_result,
+        "ogc_application_package_validation": ap_result,
         "smoke_test": smoke_result,
         "blocking_issues": sorted(set(blocking)),
         "warnings": sorted(set(warnings)),
@@ -106,6 +119,7 @@ def render_validation_markdown(report: dict[str, Any]) -> str:
         f"- OGC ready: `{report.get('ogc_ready')}`",
         f"- MAAP DPS ready: `{report.get('maap_dps_ready')}`",
         f"- CWL valid: `{report.get('cwl_valid')}`",
+        f"- OGC Application Package valid: `{report.get('ogc_application_package_valid')}`",
         "",
         "## Blocking Issues",
         "",
@@ -169,7 +183,7 @@ def _check_sources(path: Path) -> dict[str, list[str]]:
         text = source_path.read_text(encoding="utf-8")
         if LOCAL_PATH_RE.search(text):
             warnings.append(f"{source_path.name} contains a hardcoded local path pattern.")
-        if "input(" in text:
+        if source_path.suffix == ".py" and _contains_interactive_input_call(text):
             blocking.append(f"{source_path.name} contains interactive input().")
     return {"blocking": blocking, "warnings": warnings}
 
@@ -200,11 +214,12 @@ def _validate_cwl(path: Path) -> dict[str, Any]:
     workflow_path = path / "workflow.cwl"
     if not cwl_path.exists():
         return {"status": "not_available", "valid": False, "message": "application.cwl is missing."}
-    if shutil.which("cwltool") is None:
+    cwltool_path = _which("cwltool")
+    if cwltool_path is None:
         return {"status": "skipped", "valid": False, "message": "cwltool is not installed."}
-    commands = [["cwltool", "--validate", str(cwl_path)]]
+    commands = [[cwltool_path, "--validate", str(cwl_path)]]
     if workflow_path.exists():
-        commands.append(["cwltool", "--validate", str(workflow_path)])
+        commands.append([cwltool_path, "--validate", str(workflow_path)])
     outputs = []
     for command in commands:
         result = subprocess.run(command, check=False, capture_output=True, text=True)
@@ -219,6 +234,66 @@ def _validate_cwl(path: Path) -> dict[str, Any]:
     return {"status": "passed", "valid": True, "output": "\n".join(outputs)}
 
 
+def _validate_ogc_application_package(path: Path) -> dict[str, Any]:
+    ap_validator_path = _which("ap-validator")
+    if ap_validator_path is None:
+        return {"status": "skipped", "valid": False, "message": "ap-validator is not installed."}
+
+    app_package_path = path / "application-package.cwl"
+    pack_result = {"status": "not_needed"}
+    if not app_package_path.exists():
+        cwltool_path = _which("cwltool")
+        workflow_path = path / "workflow.cwl"
+        if cwltool_path is None or not workflow_path.exists():
+            return {
+                "status": "skipped",
+                "valid": False,
+                "message": "application-package.cwl is missing and cwltool/workflow.cwl is unavailable.",
+            }
+        pack = subprocess.run(
+            [cwltool_path, "--pack", str(workflow_path)],
+            cwd=path,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if pack.returncode != 0:
+            return {
+                "status": "failed",
+                "valid": False,
+                "message": "Failed to pack workflow.cwl for OGC AP validation.",
+                "output": pack.stdout + pack.stderr,
+            }
+        app_package_path.write_text(_add_ogc_ap_metadata(pack.stdout, path), encoding="utf-8")
+        pack_result = {"status": "created", "path": str(app_package_path)}
+    else:
+        app_package_path.write_text(
+            _add_ogc_ap_metadata(app_package_path.read_text(encoding="utf-8"), path),
+            encoding="utf-8",
+        )
+
+    result = subprocess.run(
+        [ap_validator_path, "--format", "json", "--detail", "all", str(app_package_path)],
+        cwd=path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        payload = {"raw_stdout": result.stdout}
+    valid = result.returncode == 0 and bool(payload.get("valid", False))
+    return {
+        "status": "passed" if valid else "failed",
+        "valid": valid,
+        "returncode": result.returncode,
+        "pack": pack_result,
+        "report": payload,
+        "stderr": result.stderr,
+    }
+
+
 def _run_smoke_test(path: Path) -> dict[str, Any]:
     run_path = path / "run.sh"
     if not run_path.exists():
@@ -227,6 +302,52 @@ def _run_smoke_test(path: Path) -> dict[str, Any]:
     if result.returncode in {0, 2}:
         return {"status": "passed", "returncode": result.returncode, "output": result.stdout + result.stderr}
     return {"status": "failed", "returncode": result.returncode, "output": result.stdout + result.stderr}
+
+
+def _contains_interactive_input_call(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return "input(" in source
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "input":
+            return True
+    return False
+
+
+def _add_ogc_ap_metadata(cwl_text: str, package_dir: Path) -> str:
+    try:
+        packed = yaml.safe_load(cwl_text) or {}
+    except yaml.YAMLError:
+        return cwl_text
+    namespaces = packed.get("$namespaces")
+    if not isinstance(namespaces, dict):
+        namespaces = {}
+    namespaces.setdefault("s", "https://schema.org/")
+    packed["$namespaces"] = namespaces
+    packed.setdefault("s:softwareVersion", _package_version(package_dir))
+    return yaml.safe_dump(packed, sort_keys=False)
+
+
+def _package_version(package_dir: Path) -> str:
+    app_path = package_dir / "app.yaml"
+    if not app_path.exists():
+        return "main"
+    try:
+        app = yaml.safe_load(app_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return "main"
+    return str(app.get("version") or app.get("algorithm_version") or "main")
+
+
+def _which(command: str) -> str | None:
+    resolved = shutil.which(command)
+    if resolved:
+        return resolved
+    local = Path.home() / ".local" / "bin" / command
+    if local.exists():
+        return str(local)
+    return None
 
 
 def _next_actions(blocking: list[str]) -> list[str]:

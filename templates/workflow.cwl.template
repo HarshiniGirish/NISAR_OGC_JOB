@@ -1,6 +1,11 @@
 cwlVersion: v1.2
+$namespaces:
+  s: https://schema.org/
+s:softwareVersion: "{{ version }}"
 class: Workflow
+id: main
 label: {{ name }} workflow
+doc: "{{ description }}"
 
 inputs:
 {{ cwl_workflow_inputs_block }}
