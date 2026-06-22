@@ -156,6 +156,7 @@ def process():
     def test_suggested_notebook_v2_is_non_destructive(self) -> None:
         notebook = {
             "cells": [
+                {"cell_type": "code", "metadata": {}, "source": ["import requests\n"]},
                 {"cell_type": "code", "metadata": {}, "source": ["print('science')\n"]},
             ],
             "metadata": {},
@@ -177,6 +178,14 @@ def process():
             self.assertEqual(path.read_text(encoding="utf-8"), original_text)
             self.assertTrue(Path(report["suggested_v2_notebook_path"]).exists())
             self.assertTrue((Path(tmpdir) / "notebook_v2_diff_report.json").exists())
+            suggested = json.loads(Path(report["suggested_v2_notebook_path"]).read_text(encoding="utf-8"))
+            suggested_source = "\n".join(
+                "".join(cell.get("source", []))
+                for cell in suggested["cells"]
+                if cell.get("cell_type") == "code"
+            )
+            self.assertIn("import requests", suggested_source)
+            self.assertIn(0, report["preserved_setup_cells"])
 
     def test_generator_cli_emits_new_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

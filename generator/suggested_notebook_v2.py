@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -120,17 +121,27 @@ def _build_v2_cells(
         _code_cell(_discovery_source()),
         _markdown_cell("## Data access\n\nOpen remote or staged inputs using the selected access mode."),
         _code_cell(_access_source()),
+        _markdown_cell(
+            "## Setup imported from original notebook\n\n"
+            "Import/setup cells are preserved because DPS-ready cells may depend on them."
+        ),
         _markdown_cell("## Processing / subsetting\n\nMove science processing into functions where practical."),
     ]
 
     changed_cells = []
     unchanged_cells = []
     skipped_cells = []
+    preserved_setup_cells = []
     for index, cell in enumerate(source_cells):
         if cell.get("cell_type") != "code":
             unchanged_cells.append(index)
             continue
         source = _cell_source(cell)
+        if _is_setup_cell(source):
+            preserved_setup_cells.append(index)
+            cells.append(_markdown_cell(f"### Preserved setup/import cell {index}"))
+            cells.append(_code_cell(_transform_setup_source(source)))
+            continue
         if index in notebook_only:
             skipped_cells.append(index)
             continue
@@ -152,6 +163,7 @@ def _build_v2_cells(
         "changed_cells": changed_cells,
         "unchanged_cells": unchanged_cells,
         "removed_or_skipped_notebook_only_cells": skipped_cells,
+        "preserved_setup_cells": preserved_setup_cells,
         "newly_parameterized_values": parameter_names,
         "dps_ready_sections": dps_ready,
         "remaining_issues": blocking,
@@ -223,6 +235,37 @@ def _transform_source(source: str) -> str:
     if "output_dir" not in transformed and "to_" in transformed:
         transformed = "# Review output paths: write generated files under output_dir.\n" + transformed
     return transformed.rstrip() + "\n"
+
+
+def _transform_setup_source(source: str) -> str:
+    return "# Preserved from original notebook because later DPS-ready cells depend on it.\n" + source.rstrip() + "\n"
+
+
+def _is_setup_cell(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    if not tree.body:
+        return False
+    import_count = sum(isinstance(node, (ast.Import, ast.ImportFrom)) for node in tree.body)
+    if import_count == 0:
+        return False
+    executable_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and not (
+            isinstance(node.func, ast.Name)
+            and node.func.id in {"dict", "list", "set", "tuple"}
+        )
+    ]
+    # Preserve import/setup cells, but do not preserve visualization or access cells only because
+    # they happen to import a package.
+    source_lower = source.lower()
+    if any(marker in source_lower for marker in ("plt.show", "folium.", "requests.get", "client.open")):
+        return False
+    return len(executable_calls) <= 2
 
 
 def _defaults_by_parameter(mcp_defaults: dict[str, Any]) -> dict[str, Any]:
