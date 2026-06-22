@@ -2542,7 +2542,11 @@ For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`)
 
     print("Generated package files:")
     for file_name in generated_files:
-        print(f" - {output_dir.relative_to(ROOT)}/{file_name}")
+        try:
+            output_label = output_dir.relative_to(ROOT)
+        except ValueError:
+            output_label = output_dir
+        print(f" - {output_label}/{file_name}")
 
 
 if __name__ == "__main__":
