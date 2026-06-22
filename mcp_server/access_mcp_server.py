@@ -10,12 +10,14 @@ try:
     from .tools.asset_inspection import inspect_asset
     from .tools.cmr import get_cmr_collection, get_cmr_granule
     from .tools.cost_estimator import estimate_subset_cost
+    from .tools.default_resolver import resolve_default_values
     from .tools.recommendation import build_dataset_facts, recommend_access_pattern
 except ImportError:
     from tools.access_options import check_access_options
     from tools.asset_inspection import inspect_asset
     from tools.cmr import get_cmr_collection, get_cmr_granule
     from tools.cost_estimator import estimate_subset_cost
+    from tools.default_resolver import resolve_default_values
     from tools.recommendation import build_dataset_facts, recommend_access_pattern
 
 
@@ -26,6 +28,7 @@ TOOL_REGISTRY: dict[str, Callable[..., dict[str, Any]]] = {
     "check_access_options": check_access_options,
     "estimate_subset_cost": estimate_subset_cost,
     "build_dataset_facts": build_dataset_facts,
+    "resolve_default_values": resolve_default_values,
 }
 
 
