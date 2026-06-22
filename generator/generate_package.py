@@ -2455,6 +2455,9 @@ def main() -> None:
             readiness_scan=dps_readiness_scan,
             recommendations=structured_llm_recommendations,
             mcp_defaults=mcp_default_suggestions,
+            use_llm_synthesis=cli_args.llm_recommendations,
+            llm_provider=cli_args.llm_provider,
+            llm_model=cli_args.llm_model or cli_args.openai_model,
         )
         if notebook_v2_report.get("status") == "created":
             generated_files.extend(

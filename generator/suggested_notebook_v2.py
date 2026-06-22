@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 from pathlib import Path
 from typing import Any
+import urllib.error
+import urllib.request
 
 
 PARAMETER_ORDER = [
@@ -27,6 +30,9 @@ def emit_suggested_notebook_v2(
     readiness_scan: dict[str, Any],
     recommendations: dict[str, Any],
     mcp_defaults: dict[str, Any],
+    use_llm_synthesis: bool = False,
+    llm_provider: str = "auto",
+    llm_model: str = "",
 ) -> dict[str, Any]:
     source_path = Path(notebook_path)
     if source_path.suffix.lower() != ".ipynb":
@@ -37,7 +43,16 @@ def emit_suggested_notebook_v2(
 
     original = json.loads(source_path.read_text(encoding="utf-8"))
     output_path = Path(output_dir) / "suggested_notebook_v2.ipynb"
-    cells, diff = _build_v2_cells(original, readiness_scan, recommendations, mcp_defaults)
+    synthesis = synthesize_notebook_v2_cells(
+        original=original,
+        readiness_scan=readiness_scan,
+        recommendations=recommendations,
+        mcp_defaults=mcp_defaults,
+        enabled=use_llm_synthesis,
+        provider=llm_provider,
+        model=llm_model,
+    )
+    cells, diff = synthesis["cells"], synthesis["diff"]
     notebook = {
         "cells": cells,
         "metadata": original.get("metadata", {}),
@@ -48,6 +63,7 @@ def emit_suggested_notebook_v2(
 
     report = {
         "status": "created",
+        "synthesis": synthesis["metadata"],
         "original_notebook_path": str(source_path),
         "suggested_v2_notebook_path": str(output_path),
         **diff,
@@ -57,6 +73,85 @@ def emit_suggested_notebook_v2(
     json_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     md_path.write_text(render_notebook_v2_diff_markdown(report), encoding="utf-8")
     return report
+
+
+def synthesize_notebook_v2_cells(
+    *,
+    original: dict[str, Any],
+    readiness_scan: dict[str, Any],
+    recommendations: dict[str, Any],
+    mcp_defaults: dict[str, Any],
+    enabled: bool,
+    provider: str,
+    model: str,
+) -> dict[str, Any]:
+    fallback_cells, fallback_diff = _build_v2_cells(original, readiness_scan, recommendations, mcp_defaults)
+    if not enabled:
+        return {
+            "cells": fallback_cells,
+            "diff": fallback_diff,
+            "metadata": {
+                "status": "fallback",
+                "provider": "rule_based",
+                "message": "LLM notebook synthesis was not requested.",
+            },
+        }
+
+    resolved_provider = _resolve_provider(provider)
+    if resolved_provider != "openai":
+        return {
+            "cells": fallback_cells,
+            "diff": fallback_diff,
+            "metadata": {
+                "status": "fallback",
+                "provider": resolved_provider,
+                "message": "Only OpenAI notebook synthesis is currently implemented.",
+            },
+        }
+
+    result = _call_openai_notebook_synthesis(
+        original=original,
+        readiness_scan=readiness_scan,
+        recommendations=recommendations,
+        mcp_defaults=mcp_defaults,
+        model=model or "gpt-4o-mini",
+    )
+    if result.get("status") != "completed":
+        return {
+            "cells": fallback_cells,
+            "diff": fallback_diff,
+            "metadata": {
+                "status": "fallback",
+                "provider": "openai",
+                "message": result.get("message", "OpenAI synthesis did not complete."),
+            },
+        }
+
+    validation = _validate_llm_notebook_payload(result.get("payload", {}))
+    if not validation["valid"]:
+        return {
+            "cells": fallback_cells,
+            "diff": fallback_diff,
+            "metadata": {
+                "status": "fallback",
+                "provider": "openai",
+                "model": result.get("model", model),
+                "message": "OpenAI notebook synthesis returned invalid notebook JSON.",
+                "validation_errors": validation["errors"],
+            },
+        }
+
+    payload = result["payload"]
+    return {
+        "cells": [_payload_cell_to_notebook_cell(cell) for cell in payload["cells"]],
+        "diff": _normalize_llm_diff(payload.get("diff", {}), fallback_diff),
+        "metadata": {
+            "status": "completed",
+            "provider": "openai",
+            "model": result.get("model", model),
+            "validation": validation,
+        },
+    }
 
 
 def render_notebook_v2_diff_markdown(report: dict[str, Any]) -> str:
@@ -143,6 +238,16 @@ def _build_v2_cells(
             cells.append(_markdown_cell(f"### Preserved setup/import cell {index}"))
             cells.append(_code_cell(_transform_setup_source(source)))
             continue
+        if _is_helper_cell(source):
+            preserved_setup_cells.append(index)
+            cells.append(_markdown_cell(f"### Preserved helper/function cell {index}"))
+            cells.append(_code_cell(_transform_setup_source(source)))
+            continue
+        if _is_job_execution_cell(source):
+            changed_cells.append(index)
+            cells.append(_markdown_cell(f"### Preserved job execution cell {index}\n\nDPS note: this cell creates runtime job outputs."))
+            cells.append(_code_cell(_transform_source(source)))
+            continue
         if index in notebook_only:
             skipped_cells.append(index)
             continue
@@ -170,6 +275,183 @@ def _build_v2_cells(
         "remaining_issues": blocking,
     }
     return cells, diff
+
+
+def _resolve_provider(provider: str) -> str:
+    provider = provider.lower()
+    if provider != "auto":
+        return provider
+    return "openai" if os.environ.get("OPENAI_API_KEY") else "none"
+
+
+def _call_openai_notebook_synthesis(
+    *,
+    original: dict[str, Any],
+    readiness_scan: dict[str, Any],
+    recommendations: dict[str, Any],
+    mcp_defaults: dict[str, Any],
+    model: str,
+) -> dict[str, Any]:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return {"status": "skipped", "message": "OPENAI_API_KEY is not set."}
+
+    prompt = _build_notebook_synthesis_prompt(original, readiness_scan, recommendations, mcp_defaults)
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You refactor exploratory MAAP/OGC notebooks into runtime-safe notebook drafts. "
+                        "Return JSON only. Do not include secrets. Do not hardcode catalog defaults from docs."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=body,
+        headers={"authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+        content = response_payload["choices"][0]["message"]["content"]
+        return {"status": "completed", "model": model, "payload": json.loads(content)}
+    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, json.JSONDecodeError) as exc:
+        return {"status": "failed", "message": f"OpenAI notebook synthesis failed: {exc}"}
+
+
+def _build_notebook_synthesis_prompt(
+    original: dict[str, Any],
+    readiness_scan: dict[str, Any],
+    recommendations: dict[str, Any],
+    mcp_defaults: dict[str, Any],
+) -> str:
+    original_cells = []
+    for index, cell in enumerate(original.get("cells", [])):
+        original_cells.append(
+            {
+                "index": index,
+                "cell_type": cell.get("cell_type"),
+                "source": _cell_source(cell),
+            }
+        )
+
+    return json.dumps(
+        {
+            "task": (
+                "Create a suggested Version 2 notebook that is runtime-safe for OGC/MAAP DPS packaging. "
+                "The notebook must preserve scientific intent, make hidden notebook state explicit, "
+                "separate optional visualization, and write outputs under output_dir."
+            ),
+            "rules": [
+                "Do not overwrite the original notebook.",
+                "Return JSON only with keys cells and diff.",
+                "Each cell must have cell_type markdown or code and a source string.",
+                "Code cells must be valid Python.",
+                "Include a parameters cell tagged parameters.",
+                "Define safe defaults for short_name, collection_id, bbox, datetime, asset_href, asset_key, group, variables, output_dir, and access_mode.",
+                "Do not crash if STAC responses are missing assets; use warnings and fallback outputs.",
+                "Always write at least one file under output_dir.",
+                "Keep visualization optional and not required for the job.",
+                "Do not invent real MAAP/STAC dataset defaults. Use blanks or provenance-backed suggestions.",
+            ],
+            "required_json_schema": {
+                "cells": [
+                    {
+                        "cell_type": "markdown|code",
+                        "source": "string",
+                        "tags": ["optional list; include parameters for parameter cell"],
+                    }
+                ],
+                "diff": {
+                    "changed_cells": ["original cell indexes"],
+                    "unchanged_cells": ["original cell indexes"],
+                    "removed_or_skipped_notebook_only_cells": ["original cell indexes"],
+                    "preserved_setup_cells": ["original cell indexes"],
+                    "newly_parameterized_values": ["parameter names"],
+                    "dps_ready_sections": ["section names"],
+                    "remaining_issues": ["strings"],
+                },
+            },
+            "original_cells": original_cells,
+            "readiness_scan": readiness_scan,
+            "recommendations": recommendations,
+            "mcp_defaults": mcp_defaults,
+        },
+        indent=2,
+    )
+
+
+def _validate_llm_notebook_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    errors: list[str] = []
+    if not isinstance(payload, dict):
+        return {"valid": False, "errors": ["Payload must be a JSON object."]}
+    cells = payload.get("cells")
+    if not isinstance(cells, list) or not cells:
+        errors.append("cells must be a non-empty list.")
+        return {"valid": False, "errors": errors}
+    has_parameters = False
+    has_output_write = False
+    for index, cell in enumerate(cells):
+        if not isinstance(cell, dict):
+            errors.append(f"cell {index} must be an object.")
+            continue
+        cell_type = cell.get("cell_type")
+        source = cell.get("source")
+        if cell_type not in {"markdown", "code"}:
+            errors.append(f"cell {index} has invalid cell_type.")
+        if not isinstance(source, str):
+            errors.append(f"cell {index} source must be a string.")
+            continue
+        if cell_type == "code":
+            tags = cell.get("tags", [])
+            if isinstance(tags, list) and "parameters" in tags:
+                has_parameters = True
+            if "output_dir" in source and (".write" in source or "open(" in source or "mkdir" in source):
+                has_output_write = True
+            try:
+                ast.parse(source)
+            except SyntaxError as exc:
+                errors.append(f"cell {index} has invalid Python: {exc.msg}")
+    if not has_parameters:
+        errors.append("No code cell tagged parameters was returned.")
+    if not has_output_write:
+        errors.append("No code cell visibly writes output under output_dir.")
+    return {"valid": not errors, "errors": errors}
+
+
+def _payload_cell_to_notebook_cell(cell: dict[str, Any]) -> dict[str, Any]:
+    cell_type = cell["cell_type"]
+    if cell_type == "markdown":
+        return _markdown_cell(cell["source"])
+    tags = cell.get("tags", [])
+    return _code_cell(cell["source"].rstrip() + "\n", tags=tags if isinstance(tags, list) else None)
+
+
+def _normalize_llm_diff(diff: dict[str, Any], fallback_diff: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(fallback_diff)
+    if isinstance(diff, dict):
+        for key in (
+            "changed_cells",
+            "unchanged_cells",
+            "removed_or_skipped_notebook_only_cells",
+            "preserved_setup_cells",
+            "newly_parameterized_values",
+            "dps_ready_sections",
+            "remaining_issues",
+        ):
+            if isinstance(diff.get(key), list):
+                normalized[key] = diff[key]
+    return normalized
 
 
 def _parameter_names(recommendations: dict[str, Any], defaults: dict[str, Any]) -> list[str]:
@@ -292,6 +574,64 @@ def _is_setup_cell(source: str) -> bool:
     if any(marker in source_lower for marker in ("plt.show", "folium.", "requests.get", "client.open")):
         return False
     return len(executable_calls) <= 2
+
+
+def _is_helper_cell(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    if not tree.body:
+        return False
+    has_function_or_class = any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) for node in tree.body)
+    has_uppercase_catalog = any(
+        isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id.isupper() for target in node.targets)
+        for node in tree.body
+    )
+    if not (has_function_or_class or has_uppercase_catalog):
+        return False
+    source_lower = source.lower()
+    if any(marker in source_lower for marker in ("plt.show", "folium.map", "display(")):
+        return False
+    return True
+
+
+def _is_job_execution_cell(source: str) -> bool:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    assigned = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                assigned.update(_assigned_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            assigned.update(_assigned_names(node.target))
+    return bool(
+        assigned.intersection(
+            {
+                "job_result",
+                "items_response",
+                "collection_metadata",
+                "written_outputs",
+                "selected_algorithm",
+                "ranked_algorithms",
+            }
+        )
+    )
+
+
+def _assigned_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, (ast.Tuple, ast.List)):
+        names: set[str] = set()
+        for item in node.elts:
+            names.update(_assigned_names(item))
+        return names
+    return set()
 
 
 def _defaults_by_parameter(mcp_defaults: dict[str, Any]) -> dict[str, Any]:

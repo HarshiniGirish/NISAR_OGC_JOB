@@ -18,6 +18,7 @@ from generator.llm_recommendations import (
 from generator.ogc_validator import validate_generated_package
 from generator.suggested_notebook_v2 import emit_suggested_notebook_v2
 from generator.suggested_notebook_v2 import _transform_source
+from generator.suggested_notebook_v2 import _validate_llm_notebook_payload
 from mcp_server.tools.default_resolver import resolve_default_values
 
 
@@ -158,6 +159,16 @@ def process():
         notebook = {
             "cells": [
                 {"cell_type": "code", "metadata": {}, "source": ["import requests\n"]},
+                {
+                    "cell_type": "code",
+                    "metadata": {},
+                    "source": ["ALGORITHM_CATALOG = []\n", "def build_job_result():\n", "    return {}\n"],
+                },
+                {
+                    "cell_type": "code",
+                    "metadata": {},
+                    "source": ["job_result = build_job_result()\n"],
+                },
                 {"cell_type": "code", "metadata": {}, "source": ["print('science')\n"]},
             ],
             "metadata": {},
@@ -186,8 +197,11 @@ def process():
                 if cell.get("cell_type") == "code"
             )
             self.assertIn("import requests", suggested_source)
+            self.assertIn("def build_job_result", suggested_source)
+            self.assertIn("job_result = build_job_result()", suggested_source)
             self.assertIn("asset_key = ''", suggested_source)
             self.assertIn(0, report["preserved_setup_cells"])
+            self.assertIn(1, report["preserved_setup_cells"])
 
     def test_suggested_notebook_v2_rewrites_brittle_stac_asset_lookup(self) -> None:
         transformed = _transform_source("url = items_response['assets']['mean']['href']\n")
@@ -195,6 +209,30 @@ def process():
         self.assertIn("extract_asset_href", transformed)
         self.assertIn("globals().get('asset_key', '')", transformed)
         self.assertNotIn("['assets']['mean']['href']", transformed)
+
+    def test_llm_notebook_payload_validator_requires_parameters_and_outputs(self) -> None:
+        valid_payload = {
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "tags": ["parameters"],
+                    "source": "output_dir = 'output'\nasset_href = ''\n",
+                },
+                {
+                    "cell_type": "code",
+                    "source": (
+                        "from pathlib import Path\n"
+                        "Path(output_dir).mkdir(parents=True, exist_ok=True)\n"
+                        "(Path(output_dir) / 'result.txt').write_text('ok')\n"
+                    ),
+                },
+            ],
+            "diff": {},
+        }
+        invalid_payload = {"cells": [{"cell_type": "code", "source": "print('no parameters')\n"}]}
+
+        self.assertTrue(_validate_llm_notebook_payload(valid_payload)["valid"])
+        self.assertFalse(_validate_llm_notebook_payload(invalid_payload)["valid"])
 
     def test_generator_cli_emits_new_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
