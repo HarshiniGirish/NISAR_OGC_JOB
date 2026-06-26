@@ -31,6 +31,9 @@ try:
     from .final_report import append_final_report_to_report_md, build_final_report, write_final_report
     from .llm_recommendations import build_structured_recommendations
     from .ogc_validator import validate_generated_package, write_validation_reports
+    from .readiness_summary import build_readiness_summary, write_readiness_summary
+    from .repair_plan import build_repair_plan, write_repair_plan
+    from .runtime_smoke import run_runtime_smoke_test, write_runtime_smoke_report
     from .suggested_notebook_v2 import emit_suggested_notebook_v2
 except ImportError:
     from access_evidence import build_access_evidence
@@ -41,6 +44,9 @@ except ImportError:
     from final_report import append_final_report_to_report_md, build_final_report, write_final_report
     from llm_recommendations import build_structured_recommendations
     from ogc_validator import validate_generated_package, write_validation_reports
+    from readiness_summary import build_readiness_summary, write_readiness_summary
+    from repair_plan import build_repair_plan, write_repair_plan
+    from runtime_smoke import run_runtime_smoke_test, write_runtime_smoke_report
     from suggested_notebook_v2 import emit_suggested_notebook_v2
 from mcp_server.tools.default_resolver import resolve_default_values
 from mcp_server.tools.recommendation import build_dataset_facts
@@ -2169,9 +2175,34 @@ def parse_cli_args() -> argparse.Namespace:
         help="Let the validator run a lightweight local run.sh --help smoke test.",
     )
     parser.add_argument(
+        "--run-smoke-test",
+        action="store_true",
+        help="Run the generated Python entrypoint and write runtime_smoke_test reports.",
+    )
+    parser.add_argument(
         "--emit-suggested-notebook-v2",
         action="store_true",
         help="For notebook inputs, emit suggested_notebook_v2.ipynb and comparison reports.",
+    )
+    parser.add_argument(
+        "--package-suggested-notebook-v2",
+        action="store_true",
+        help="After emitting suggested_notebook_v2.ipynb, automatically package it into v2_package/.",
+    )
+    parser.add_argument(
+        "--summarize-readiness",
+        action="store_true",
+        help="Emit START_HERE.md, readiness_summary.md/json, and dps_conversion_checklist.md.",
+    )
+    parser.add_argument(
+        "--llm-repair-plan",
+        action="store_true",
+        help="Emit a structured LLM/rule-based repair plan and safe autofix report.",
+    )
+    parser.add_argument(
+        "--apply-safe-autofixes",
+        action="store_true",
+        help="Write safe_autofix reports. Original notebooks are not overwritten.",
     )
     parser.add_argument(
         "--llm-provider",
@@ -2276,9 +2307,24 @@ def main() -> None:
         model=cli_args.access_planner_model,
     )
     dependencies = add_access_plan_dependencies(dependencies, access_plan)
+    advanced_summary_requested = any(
+        [
+            cli_args.scan_dps_readiness,
+            cli_args.use_mcp_defaults,
+            cli_args.llm_recommendations,
+            cli_args.build_dependency_graph,
+            cli_args.validate_ogc,
+            cli_args.emit_suggested_notebook_v2,
+            cli_args.package_suggested_notebook_v2,
+            cli_args.summarize_readiness,
+            cli_args.llm_repair_plan,
+            cli_args.apply_safe_autofixes,
+            cli_args.run_smoke_test,
+        ]
+    )
     dps_readiness_scan = (
         scan_dps_readiness(script_path, inputs)
-        if cli_args.scan_dps_readiness or cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2
+        if advanced_summary_requested
         else {}
     )
     mcp_default_suggestions = (
@@ -2288,7 +2334,7 @@ def main() -> None:
             user_config=app_config,
             stac_url=cli_args.maap_stac_url,
         )
-        if cli_args.use_mcp_defaults or cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2
+        if advanced_summary_requested
         else {}
     )
     if mcp_default_suggestions:
@@ -2301,7 +2347,7 @@ def main() -> None:
             resolved_dependencies=dependencies,
             source=source_info["source"],
         )
-        if cli_args.build_dependency_graph or cli_args.llm_recommendations
+        if advanced_summary_requested
         else {}
     )
     structured_llm_recommendations = (
@@ -2313,7 +2359,7 @@ def main() -> None:
             provider=cli_args.llm_provider,
             model=cli_args.llm_model or cli_args.openai_model,
         )
-        if cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2
+        if cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2 or cli_args.llm_repair_plan
         else {}
     )
     llm_prompt = build_llm_prompt(app_config, analysis, dataset_facts, access_plan)
@@ -2478,6 +2524,56 @@ def main() -> None:
         )
         generated_files.extend(write_validation_reports(ogc_validation_report, output_dir))
 
+    repair_plan: dict[str, Any] = {}
+    if cli_args.llm_repair_plan or cli_args.apply_safe_autofixes or advanced_summary_requested:
+        repair_plan = build_repair_plan(
+            readiness_scan=dps_readiness_scan,
+            analysis=analysis,
+            validation_report=ogc_validation_report,
+            dependency_graph=dependency_graph,
+            access_plan=access_plan,
+            mcp_defaults=mcp_default_suggestions,
+            enabled=cli_args.llm_repair_plan,
+            provider=cli_args.llm_provider,
+            model=cli_args.llm_model or cli_args.openai_model,
+        )
+        if cli_args.llm_repair_plan or cli_args.apply_safe_autofixes or cli_args.summarize_readiness:
+            generated_files.extend(write_repair_plan(repair_plan, output_dir))
+
+    runtime_smoke_report: dict[str, Any] = {}
+    if cli_args.run_smoke_test:
+        runtime_smoke_report = run_runtime_smoke_test(output_dir)
+        generated_files.extend(write_runtime_smoke_report(runtime_smoke_report, output_dir))
+
+    v2_package_report: dict[str, Any] = {}
+    if cli_args.package_suggested_notebook_v2 and notebook_v2_report.get("status") == "created":
+        v2_output_dir = output_dir / "v2_package"
+        v2_command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--input",
+            str(output_dir / "suggested_notebook_v2.ipynb"),
+            "--scan-dps-readiness",
+            "--use-mcp-defaults",
+            "--build-dependency-graph",
+            "--validate-ogc",
+            "--summarize-readiness",
+            "--output-dir",
+            str(v2_output_dir),
+        ]
+        if cli_args.run_smoke_test:
+            v2_command.append("--run-smoke-test")
+        result = subprocess.run(v2_command, check=False, capture_output=True, text=True)
+        v2_package_report = {
+            "status": "created" if result.returncode == 0 else "failed",
+            "output_dir": str(v2_output_dir),
+            "returncode": result.returncode,
+            "stdout_tail": result.stdout[-4000:],
+            "stderr_tail": result.stderr[-4000:],
+        }
+        write_text(output_dir / "v2_package_report.json", json.dumps(v2_package_report, indent=2) + "\n")
+        generated_files.append("v2_package_report.json")
+
     final_readiness_report = build_final_report(
         readiness_scan=dps_readiness_scan,
         llm_recommendations=structured_llm_recommendations,
@@ -2489,17 +2585,23 @@ def main() -> None:
         validation_report=ogc_validation_report,
         notebook_v2_report=notebook_v2_report,
     )
-    if any(
-        [
-            cli_args.scan_dps_readiness,
-            cli_args.use_mcp_defaults,
-            cli_args.llm_recommendations,
-            cli_args.build_dependency_graph,
-            cli_args.validate_ogc,
-            cli_args.emit_suggested_notebook_v2,
-        ]
-    ):
+    final_readiness_report["repair_plan"] = repair_plan
+    final_readiness_report["runtime_smoke_test"] = runtime_smoke_report
+    final_readiness_report["v2_package"] = v2_package_report
+    if advanced_summary_requested:
         generated_files.append(write_final_report(final_readiness_report, output_dir))
+        summary = build_readiness_summary(
+            readiness_scan=dps_readiness_scan,
+            validation_report=ogc_validation_report,
+            llm_recommendations=structured_llm_recommendations,
+            mcp_defaults=mcp_default_suggestions,
+            dependency_graph=dependency_graph,
+            access_plan=access_plan,
+            generated_files=generated_files,
+            repair_plan=repair_plan,
+            smoke_test=runtime_smoke_report,
+        )
+        generated_files.extend(write_readiness_summary(summary, output_dir))
 
     readme = f"""# {name}
 
@@ -2575,16 +2677,7 @@ For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`)
         dependencies,
         generated_files,
     )
-    if any(
-        [
-            cli_args.scan_dps_readiness,
-            cli_args.use_mcp_defaults,
-            cli_args.llm_recommendations,
-            cli_args.build_dependency_graph,
-            cli_args.validate_ogc,
-            cli_args.emit_suggested_notebook_v2,
-        ]
-    ):
+    if advanced_summary_requested:
         report = append_final_report_to_report_md(report, final_readiness_report)
     write_text(output_dir / "report.md", report)
 
@@ -2597,6 +2690,24 @@ For OGC publication set `OGC_REGISTRY_URL` (and optionally `OGC_REGISTRY_TOKEN`)
         except ValueError:
             output_label = output_dir
         print(f" - {output_label}/{file_name}")
+    if advanced_summary_requested:
+        print("")
+        print("Readiness summary:")
+        if ogc_validation_report:
+            print(f" - OGC ready: {ogc_validation_report.get('ogc_ready')}")
+            print(f" - MAAP DPS ready: {ogc_validation_report.get('maap_dps_ready')}")
+            print(f" - CWL valid: {ogc_validation_report.get('cwl_valid')}")
+            print(
+                " - OGC Application Package valid: "
+                f"{ogc_validation_report.get('ogc_application_package_valid')}"
+            )
+            print(f" - Blocking issues: {len(ogc_validation_report.get('blocking_issues', []))}")
+        if dps_readiness_scan:
+            print(
+                " - DPS suitability score: "
+                f"{dps_readiness_scan.get('summary', {}).get('dps_suitability_score')}"
+            )
+        print(f" - Start here: {output_label}/START_HERE.md")
 
 
 if __name__ == "__main__":

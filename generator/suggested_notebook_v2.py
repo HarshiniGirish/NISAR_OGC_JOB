@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 import urllib.error
@@ -497,6 +498,38 @@ def _access_source() -> str:
         "item = globals().get('item', '') or globals().get('asset_key', '')\n"
         "stac_endpoint = globals().get('stac_endpoint', '')\n"
         "titiler_endpoint = globals().get('titiler_endpoint', '')\n\n"
+        "def maap_search_granule(maap_client, **kwargs):\n"
+        "    \"\"\"Support both older camelCase and newer snake_case maap-py APIs.\"\"\"\n"
+        "    try:\n"
+        "        if hasattr(maap_client, 'search_granule'):\n"
+        "            return maap_client.search_granule(**kwargs)\n"
+        "        return maap_client.searchGranule(**kwargs)\n"
+        "    except Exception as exc:\n"
+        "        print(f'Warning: MAAP granule search failed: {exc}')\n"
+        "        return []\n\n"
+        "def maap_search_collection(maap_client, **kwargs):\n"
+        "    \"\"\"Support both older camelCase and newer snake_case maap-py APIs.\"\"\"\n"
+        "    try:\n"
+        "        if hasattr(maap_client, 'search_collection'):\n"
+        "            return maap_client.search_collection(**kwargs)\n"
+        "        return maap_client.searchCollection(**kwargs)\n"
+        "    except Exception as exc:\n"
+        "        print(f'Warning: MAAP collection search failed: {exc}')\n"
+        "        return []\n\n"
+        "def safe_get_data(result, data_dir=None):\n"
+        "    \"\"\"Download when authorized; otherwise write a reviewable access-failure manifest.\"\"\"\n"
+        "    output_path = Path(globals().get('output_dir', 'output'))\n"
+        "    output_path.mkdir(parents=True, exist_ok=True)\n"
+        "    try:\n"
+        "        if result is None:\n"
+        "            raise ValueError('No MAAP search result is available for download.')\n"
+        "        target_dir = data_dir or output_path\n"
+        "        return result.getData(str(target_dir))\n"
+        "    except Exception as exc:\n"
+        "        manifest = output_path / 'data_access_failure.json'\n"
+        "        manifest.write_text(json.dumps({'error': str(exc), 'note': 'Data download failed; package structure remains reviewable.'}, indent=2) + '\\n', encoding='utf-8')\n"
+        "        print(f'Warning: data download failed; wrote {manifest}: {exc}')\n"
+        "        return ''\n\n"
         "def open_input_asset(discovery):\n"
         "    \"\"\"Open or stage input data according to access_mode.\"\"\"\n"
         "    href = discovery.get('asset_href') or asset_href\n"
@@ -532,6 +565,15 @@ def _output_source() -> str:
 
 def _transform_source(source: str) -> str:
     transformed = source.replace('"/tmp/', '"output/tmp_').replace("'/tmp/", "'output/tmp_")
+    transformed = transformed.replace("maap.searchGranule(", "maap_search_granule(maap, ")
+    transformed = transformed.replace("maap.search_granule(", "maap_search_granule(maap, ")
+    transformed = transformed.replace("maap.searchCollection(", "maap_search_collection(maap, ")
+    transformed = transformed.replace("maap.search_collection(", "maap_search_collection(maap, ")
+    transformed = re.sub(
+        r"([A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]+\])?)\.getData\(([^)]*)\)",
+        r"safe_get_data(\1, \2)",
+        transformed,
+    )
     transformed = transformed.replace(
         "items_response['assets']['mean']['href']",
         "extract_asset_href(items_response, globals().get('asset_key', '') or 'mean', asset_href or input_asset)",

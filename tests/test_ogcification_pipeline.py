@@ -16,6 +16,8 @@ from generator.llm_recommendations import (
     validate_recommendation_schema,
 )
 from generator.ogc_validator import validate_generated_package
+from generator.readiness_summary import build_readiness_summary
+from generator.repair_plan import build_repair_plan, validate_repair_plan
 from generator.suggested_notebook_v2 import emit_suggested_notebook_v2
 from generator.suggested_notebook_v2 import _transform_source
 from generator.suggested_notebook_v2 import _validate_llm_notebook_payload
@@ -204,11 +206,17 @@ def process():
             self.assertIn(1, report["preserved_setup_cells"])
 
     def test_suggested_notebook_v2_rewrites_brittle_stac_asset_lookup(self) -> None:
-        transformed = _transform_source("url = items_response['assets']['mean']['href']\n")
+        transformed = _transform_source(
+            "results = maap.searchGranule(short_name='OPERA_L3_DISP-S1_V1')\n"
+            "file_path = results[0].getData(data_dir)\n"
+            "url = items_response['assets']['mean']['href']\n"
+        )
 
         self.assertIn("extract_asset_href", transformed)
         self.assertIn("globals().get('asset_key', '')", transformed)
         self.assertNotIn("['assets']['mean']['href']", transformed)
+        self.assertIn("maap_search_granule(maap,", transformed)
+        self.assertIn("safe_get_data(results[0], data_dir)", transformed)
 
     def test_llm_notebook_payload_validator_requires_parameters_and_outputs(self) -> None:
         valid_payload = {
@@ -234,6 +242,50 @@ def process():
         self.assertTrue(_validate_llm_notebook_payload(valid_payload)["valid"])
         self.assertFalse(_validate_llm_notebook_payload(invalid_payload)["valid"])
 
+    def test_readiness_summary_and_repair_plan_are_actionable(self) -> None:
+        readiness_scan = {
+            "summary": {"dps_ready_count": 1, "blocking_count": 0},
+            "units": [
+                {
+                    "name": "notebook cell 1",
+                    "classification": "DPS-candidate-after-refactor",
+                    "dps_suitability_score": 60,
+                    "suggested_refactors": ["Declare `output_dir` in app.yaml."],
+                }
+            ],
+        }
+        validation = {
+            "ogc_ready": True,
+            "maap_dps_ready": True,
+            "cwl_valid": True,
+            "ogc_application_package_valid": True,
+            "blocking_issues": [],
+            "warnings": [],
+        }
+        repair = build_repair_plan(
+            readiness_scan=readiness_scan,
+            analysis={"issues": []},
+            validation_report=validation,
+            dependency_graph={"summary": {"unresolved_count": 0}},
+            access_plan={"chosen_strategy": "https_download_fallback", "warnings": []},
+            mcp_defaults={"suggestions": []},
+            enabled=False,
+        )
+        summary = build_readiness_summary(
+            readiness_scan=readiness_scan,
+            validation_report=validation,
+            llm_recommendations={"suggested_inputs": []},
+            mcp_defaults={"suggestions": []},
+            dependency_graph={"summary": {"unresolved_count": 0}},
+            access_plan={"chosen_strategy": "https_download_fallback", "warnings": []},
+            generated_files=[],
+            repair_plan=repair,
+        )
+
+        self.assertTrue(validate_repair_plan(repair)["valid"])
+        self.assertIn("Yes", summary["decision"]["status"])
+        self.assertTrue(summary["next_commands"])
+
     def test_generator_cli_emits_new_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir) / "generated"
@@ -247,6 +299,8 @@ def process():
                 "--llm-recommendations",
                 "--build-dependency-graph",
                 "--validate-ogc",
+                "--summarize-readiness",
+                "--llm-repair-plan",
                 "--output-dir",
                 str(output_dir),
             ]
@@ -259,6 +313,11 @@ def process():
             self.assertTrue((output_dir / "llm_recommendations.json").exists())
             self.assertTrue((output_dir / "ogc_validation_report.json").exists())
             self.assertTrue((output_dir / "final_readiness_report.json").exists())
+            self.assertTrue((output_dir / "START_HERE.md").exists())
+            self.assertTrue((output_dir / "readiness_summary.md").exists())
+            self.assertTrue((output_dir / "dps_conversion_checklist.md").exists())
+            self.assertTrue((output_dir / "llm_repair_plan.md").exists())
+            self.assertTrue((output_dir / "safe_autofix_report.md").exists())
 
 
 if __name__ == "__main__":
