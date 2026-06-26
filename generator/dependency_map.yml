@@ -24,6 +24,11 @@ xml: null
 # External Python packages.
 numpy: numpy
 pandas: pandas
+matplotlib: matplotlib
+folium: folium
+branca: branca
+PIL: pillow
+affine: affine
 xarray: xarray
 rioxarray: rioxarray
 dask: dask
@@ -45,4 +50,6 @@ maap: maap-py
 rasterio: rasterio
 geopandas: geopandas
 shapely: shapely
+laspy: laspy
+pdal: pdal
 yaml: pyyaml
