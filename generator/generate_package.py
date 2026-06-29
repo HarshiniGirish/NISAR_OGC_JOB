@@ -26,8 +26,14 @@ try:
     from .access_evidence import build_access_evidence
     from .access_planner import plan_access
     from .access_runtime import build_access_runtime_module
+    from .ai_dps_readiness import review_dps_readiness_with_ai, write_ai_readiness_review
     from .dependency_graph import build_dependency_graph, write_dependency_graph
     from .dps_readiness_scan import scan_dps_readiness, write_readiness_reports
+    from .dynamic_dependency_resolver import (
+        merge_dependency_map_with_overrides,
+        resolve_dynamic_dependency_map,
+        write_dynamic_dependency_report,
+    )
     from .final_report import append_final_report_to_report_md, build_final_report, write_final_report
     from .llm_recommendations import build_structured_recommendations
     from .ogc_validator import validate_generated_package, write_validation_reports
@@ -39,8 +45,14 @@ except ImportError:
     from access_evidence import build_access_evidence
     from access_planner import plan_access
     from access_runtime import build_access_runtime_module
+    from ai_dps_readiness import review_dps_readiness_with_ai, write_ai_readiness_review
     from dependency_graph import build_dependency_graph, write_dependency_graph
     from dps_readiness_scan import scan_dps_readiness, write_readiness_reports
+    from dynamic_dependency_resolver import (
+        merge_dependency_map_with_overrides,
+        resolve_dynamic_dependency_map,
+        write_dynamic_dependency_report,
+    )
     from final_report import append_final_report_to_report_md, build_final_report, write_final_report
     from llm_recommendations import build_structured_recommendations
     from ogc_validator import validate_generated_package, write_validation_reports
@@ -2142,6 +2154,11 @@ def parse_cli_args() -> argparse.Namespace:
         help="Emit DPS-readiness JSON/Markdown reports for cells, functions, and code blocks.",
     )
     parser.add_argument(
+        "--ai-dps-readiness",
+        action="store_true",
+        help="Use OpenAI to review DPS-readiness classifications on top of AST/rule evidence.",
+    )
+    parser.add_argument(
         "--use-mcp-defaults",
         action="store_true",
         help="Use MCP-ready metadata tools to suggest missing runtime defaults with provenance.",
@@ -2163,6 +2180,16 @@ def parse_cli_args() -> argparse.Namespace:
         "--build-dependency-graph",
         action="store_true",
         help="Emit dependency_graph.json combining imports, mappings, implicit deps, and validation.",
+    )
+    parser.add_argument(
+        "--dynamic-dependency-resolution",
+        action="store_true",
+        help="Augment dependency_map.yml with installed-package metadata and optional online lookups.",
+    )
+    parser.add_argument(
+        "--dependency-online-lookup",
+        action="store_true",
+        help="Allow dynamic dependency resolution to query conda-forge/PyPI metadata for unknown imports.",
     )
     parser.add_argument(
         "--validate-ogc",
@@ -2285,9 +2312,23 @@ def main() -> None:
         if "pyyaml" not in implicit_dependencies["conda"]:
             implicit_dependencies["conda"].append("pyyaml")
             implicit_dependencies["conda"].sort()
+    dynamic_dependency_report = (
+        resolve_dynamic_dependency_map(
+            detected_imports=detected_imports,
+            dependency_map=dependency_map,
+            enable_online_lookup=cli_args.dependency_online_lookup,
+        )
+        if cli_args.dynamic_dependency_resolution or cli_args.dependency_online_lookup
+        else {}
+    )
+    effective_dependency_map = (
+        merge_dependency_map_with_overrides(dependency_map, dynamic_dependency_report)
+        if dynamic_dependency_report
+        else dependency_map
+    )
     dependencies = resolve_dependencies(
         detected_imports,
-        dependency_map,
+        effective_dependency_map,
         app_config,
         implicit_dependencies,
     )
@@ -2310,9 +2351,12 @@ def main() -> None:
     advanced_summary_requested = any(
         [
             cli_args.scan_dps_readiness,
+            cli_args.ai_dps_readiness,
             cli_args.use_mcp_defaults,
             cli_args.llm_recommendations,
             cli_args.build_dependency_graph,
+            cli_args.dynamic_dependency_resolution,
+            cli_args.dependency_online_lookup,
             cli_args.validate_ogc,
             cli_args.emit_suggested_notebook_v2,
             cli_args.package_suggested_notebook_v2,
@@ -2342,7 +2386,7 @@ def main() -> None:
     dependency_graph = (
         build_dependency_graph(
             detected_imports=detected_imports,
-            dependency_map=dependency_map,
+            dependency_map=effective_dependency_map,
             implicit_dependencies=implicit_dependencies,
             resolved_dependencies=dependencies,
             source=source_info["source"],
@@ -2360,6 +2404,19 @@ def main() -> None:
             model=cli_args.llm_model or cli_args.openai_model,
         )
         if cli_args.llm_recommendations or cli_args.emit_suggested_notebook_v2 or cli_args.llm_repair_plan
+        else {}
+    )
+    ai_dps_readiness_review = (
+        review_dps_readiness_with_ai(
+            readiness_scan=dps_readiness_scan,
+            analysis=analysis,
+            mcp_defaults=mcp_default_suggestions,
+            dependency_graph=dependency_graph,
+            enabled=cli_args.ai_dps_readiness,
+            provider=cli_args.llm_provider,
+            model=cli_args.llm_model or cli_args.openai_model,
+        )
+        if cli_args.ai_dps_readiness
         else {}
     )
     llm_prompt = build_llm_prompt(app_config, analysis, dataset_facts, access_plan)
@@ -2424,7 +2481,7 @@ def main() -> None:
         write_text(output_path, rendered)
         generated_files.append(output_name)
 
-    build_sh = build_build_script(name, entrypoint, detected_imports, dependency_map, runtime_config)
+    build_sh = build_build_script(name, entrypoint, detected_imports, effective_dependency_map, runtime_config)
 
     write_text(output_dir / "build.sh", build_sh)
     make_executable(output_dir / "build.sh")
@@ -2486,12 +2543,18 @@ def main() -> None:
     if cli_args.build_dependency_graph:
         generated_files.append(write_dependency_graph(dependency_graph, output_dir))
 
+    if dynamic_dependency_report:
+        generated_files.append(write_dynamic_dependency_report(dynamic_dependency_report, output_dir))
+
     if cli_args.llm_recommendations:
         write_text(
             output_dir / "llm_recommendations.json",
             json.dumps(structured_llm_recommendations, indent=2) + "\n",
         )
         generated_files.append("llm_recommendations.json")
+
+    if cli_args.ai_dps_readiness:
+        generated_files.extend(write_ai_readiness_review(ai_dps_readiness_review, output_dir))
 
     notebook_v2_report: dict[str, Any] = {}
     if cli_args.emit_suggested_notebook_v2:
@@ -2588,6 +2651,8 @@ def main() -> None:
     final_readiness_report["repair_plan"] = repair_plan
     final_readiness_report["runtime_smoke_test"] = runtime_smoke_report
     final_readiness_report["v2_package"] = v2_package_report
+    final_readiness_report["ai_dps_readiness_review"] = ai_dps_readiness_review
+    final_readiness_report["dynamic_dependency_resolution"] = dynamic_dependency_report
     if advanced_summary_requested:
         generated_files.append(write_final_report(final_readiness_report, output_dir))
         summary = build_readiness_summary(

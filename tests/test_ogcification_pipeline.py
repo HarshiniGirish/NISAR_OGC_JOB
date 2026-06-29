@@ -11,6 +11,14 @@ import yaml
 
 from generator.dependency_graph import build_dependency_graph
 from generator.dps_readiness_scan import scan_dps_readiness
+from generator.dynamic_dependency_resolver import (
+    merge_dependency_map_with_overrides,
+    resolve_dynamic_dependency_map,
+)
+from generator.ai_dps_readiness import (
+    review_dps_readiness_with_ai,
+    validate_ai_readiness_review,
+)
 from generator.llm_recommendations import (
     build_structured_recommendations,
     validate_recommendation_schema,
@@ -106,6 +114,53 @@ def process():
         self.assertEqual(graph["summary"]["validated_llm_suggestion_count"], 1)
         self.assertEqual(graph["summary"]["rejected_llm_suggestion_count"], 1)
         self.assertTrue(any(edge["trusted"] for edge in graph["edges"]))
+
+    def test_dynamic_dependency_resolver_uses_curated_stdlib_and_local_metadata(self) -> None:
+        report = resolve_dynamic_dependency_map(
+            detected_imports=["json", "yaml", "pip"],
+            dependency_map={"yaml": "pyyaml"},
+            enable_online_lookup=False,
+        )
+        suggestions = {item["import"]: item for item in report["suggestions"]}
+        merged = merge_dependency_map_with_overrides({"yaml": "pyyaml"}, report)
+
+        self.assertEqual(suggestions["json"]["manager"], "stdlib")
+        self.assertEqual(suggestions["yaml"]["source"], "dependency_map.yml")
+        self.assertIn("pip", suggestions)
+        self.assertEqual(merged.get("yaml"), "pyyaml")
+
+    def test_ai_dps_readiness_review_falls_back_and_validates_schema(self) -> None:
+        readiness_scan = {
+            "units": [
+                {
+                    "name": "notebook cell 1",
+                    "classification": "DPS-ready",
+                    "reason": "data access",
+                    "suggested_refactors": [],
+                    "dps_suitability_score": 90,
+                }
+            ]
+        }
+        fallback = review_dps_readiness_with_ai(
+            readiness_scan=readiness_scan,
+            analysis={},
+            mcp_defaults={},
+            dependency_graph={},
+            enabled=False,
+        )
+        valid_review = {
+            "recommended_dps_job": {"entrypoint": "notebook cell 1"},
+            "units": [
+                {
+                    "name": "notebook cell 1",
+                    "ai_classification": "DPS-ready",
+                    "confidence": 0.9,
+                }
+            ],
+        }
+
+        self.assertEqual(fallback["status"], "not_requested")
+        self.assertTrue(validate_ai_readiness_review(valid_review, readiness_scan)["valid"])
 
     def test_llm_recommendation_schema_and_rule_based_fallback(self) -> None:
         payload = {
@@ -297,7 +352,9 @@ def process():
                 "--scan-dps-readiness",
                 "--use-mcp-defaults",
                 "--llm-recommendations",
+                "--ai-dps-readiness",
                 "--build-dependency-graph",
+                "--dynamic-dependency-resolution",
                 "--validate-ogc",
                 "--summarize-readiness",
                 "--llm-repair-plan",
@@ -309,8 +366,10 @@ def process():
             self.assertEqual(result.returncode, 0)
             self.assertTrue((output_dir / "dps_readiness_report.json").exists())
             self.assertTrue((output_dir / "dependency_graph.json").exists())
+            self.assertTrue((output_dir / "dynamic_dependency_resolution.json").exists())
             self.assertTrue((output_dir / "mcp_default_suggestions.json").exists())
             self.assertTrue((output_dir / "llm_recommendations.json").exists())
+            self.assertTrue((output_dir / "ai_dps_readiness_review.json").exists())
             self.assertTrue((output_dir / "ogc_validation_report.json").exists())
             self.assertTrue((output_dir / "final_readiness_report.json").exists())
             self.assertTrue((output_dir / "START_HERE.md").exists())
