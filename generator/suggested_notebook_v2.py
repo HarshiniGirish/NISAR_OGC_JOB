@@ -229,6 +229,8 @@ def _build_v2_cells(
     unchanged_cells = []
     skipped_cells = []
     preserved_setup_cells = []
+    preserved_state_cells = []
+    needed_state_names = _needed_state_names(source_cells, notebook_only)
     for index, cell in enumerate(source_cells):
         if cell.get("cell_type") != "code":
             unchanged_cells.append(index)
@@ -247,6 +249,11 @@ def _build_v2_cells(
         if _is_job_execution_cell(source):
             changed_cells.append(index)
             cells.append(_markdown_cell(f"### Preserved job execution cell {index}\n\nDPS note: this cell creates runtime job outputs."))
+            cells.append(_code_cell(_transform_source(source)))
+            continue
+        if index in notebook_only and _defines_needed_state(source, needed_state_names):
+            preserved_state_cells.append(index)
+            cells.append(_markdown_cell(f"### Preserved state dependency cell {index}\n\nDPS note: this notebook-only cell defines variables used later by kept runtime cells."))
             cells.append(_code_cell(_transform_source(source)))
             continue
         if index in notebook_only:
@@ -271,6 +278,7 @@ def _build_v2_cells(
         "unchanged_cells": unchanged_cells,
         "removed_or_skipped_notebook_only_cells": skipped_cells,
         "preserved_setup_cells": preserved_setup_cells,
+        "preserved_state_cells": preserved_state_cells,
         "newly_parameterized_values": parameter_names,
         "dps_ready_sections": dps_ready,
         "remaining_issues": blocking,
@@ -663,6 +671,91 @@ def _is_job_execution_cell(source: str) -> bool:
             }
         )
     )
+
+
+def _needed_state_names(source_cells: list[dict[str, Any]], notebook_only: set[int]) -> set[str]:
+    needed: set[str] = set()
+    assigned_in_kept: set[str] = set()
+    for index, cell in enumerate(source_cells):
+        if cell.get("cell_type") != "code":
+            continue
+        source = _cell_source(cell)
+        if _is_setup_cell(source) or _is_helper_cell(source) or _is_job_execution_cell(source) or index not in notebook_only:
+            loaded = _loaded_names_from_source(source)
+            needed.update(name for name in loaded if name not in assigned_in_kept and not _is_known_global(name))
+            assigned_in_kept.update(_assigned_names_from_source(source))
+    return needed
+
+
+def _defines_needed_state(source: str, needed_state_names: set[str]) -> bool:
+    if not needed_state_names:
+        return False
+    assigned = _assigned_names_from_source(source)
+    return bool(assigned.intersection(needed_state_names))
+
+
+def _assigned_names_from_source(source: str) -> set[str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    assigned: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                assigned.update(_assigned_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            assigned.update(_assigned_names(node.target))
+        elif isinstance(node, ast.For):
+            assigned.update(_assigned_names(node.target))
+    return assigned
+
+
+def _loaded_names_from_source(source: str) -> set[str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    imported = set()
+    loaded = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name.split(".", 1)[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                imported.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            loaded.add(node.id)
+    return loaded - imported
+
+
+def _is_known_global(name: str) -> bool:
+    return name in {
+        "False",
+        "None",
+        "True",
+        "Exception",
+        "ValueError",
+        "RuntimeError",
+        "dict",
+        "float",
+        "int",
+        "len",
+        "list",
+        "max",
+        "min",
+        "next",
+        "print",
+        "range",
+        "set",
+        "sorted",
+        "str",
+        "sum",
+        "tuple",
+        "globals",
+        "isinstance",
+    }
 
 
 def _assigned_names(node: ast.AST) -> set[str]:

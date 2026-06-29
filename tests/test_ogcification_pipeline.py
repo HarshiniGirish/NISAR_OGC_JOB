@@ -273,6 +273,41 @@ def process():
         self.assertIn("maap_search_granule(maap,", transformed)
         self.assertIn("safe_get_data(results[0], data_dir)", transformed)
 
+    def test_suggested_notebook_v2_preserves_state_needed_by_runtime_cells(self) -> None:
+        notebook = {
+            "cells": [
+                {"cell_type": "code", "metadata": {}, "source": ["color_map = {'0': '#000000'}\n"]},
+                {"cell_type": "code", "metadata": {}, "source": ["import json\ncmap = json.dumps(color_map)\n"]},
+            ],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "colors.ipynb"
+            path.write_text(json.dumps(notebook), encoding="utf-8")
+            report = emit_suggested_notebook_v2(
+                path,
+                tmpdir,
+                readiness_scan={
+                    "units": [
+                        {"index": 0, "classification": "Notebook-only", "name": "notebook cell 0"},
+                        {"index": 1, "classification": "DPS-ready", "name": "notebook cell 1"},
+                    ]
+                },
+                recommendations={},
+                mcp_defaults={},
+            )
+            suggested = json.loads(Path(report["suggested_v2_notebook_path"]).read_text(encoding="utf-8"))
+            suggested_source = "\n".join(
+                "".join(cell.get("source", []))
+                for cell in suggested["cells"]
+                if cell.get("cell_type") == "code"
+            )
+
+        self.assertIn("color_map = {'0': '#000000'}", suggested_source)
+        self.assertIn(0, report["preserved_state_cells"])
+
     def test_llm_notebook_payload_validator_requires_parameters_and_outputs(self) -> None:
         valid_payload = {
             "cells": [
