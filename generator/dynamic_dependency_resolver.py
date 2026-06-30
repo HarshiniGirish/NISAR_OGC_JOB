@@ -186,7 +186,8 @@ def _local_distribution(module_name: str, package_distributions: dict[str, list[
 
 
 def _online_lookup(module_name: str) -> dict[str, Any]:
-    candidates = [module_name, module_name.replace("_", "-")]
+    normalized_module = module_name.replace("_", "-")
+    candidates = [normalized_module, f"r-{normalized_module}"]
     for candidate in candidates:
         if _conda_forge_has_package(candidate):
             return {
@@ -196,7 +197,7 @@ def _online_lookup(module_name: str) -> dict[str, Any]:
                 "manager": "conda",
                 "reason": "Package name was found in conda-forge repodata.",
             }
-    for candidate in candidates:
+    for candidate in [normalized_module]:
         if _pypi_has_package(candidate):
             return {
                 "package": candidate,
@@ -216,7 +217,10 @@ def _conda_forge_has_package(package_name: str) -> bool:
         return False
     packages = payload.get("packages", {})
     normalized = package_name.lower().replace("_", "-")
-    return any(filename.split("-", 1)[0].lower() == normalized for filename in packages)
+    for metadata in packages.values():
+        if isinstance(metadata, dict) and str(metadata.get("name", "")).lower() == normalized:
+            return True
+    return False
 
 
 def _pypi_has_package(package_name: str) -> bool:

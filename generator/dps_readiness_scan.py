@@ -257,7 +257,7 @@ def _source_facts(source: str) -> dict[str, Any]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return facts
+        return _r_source_facts(source, facts)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -300,6 +300,38 @@ def _source_facts(source: str) -> dict[str, Any]:
             if node.id in PARAMETER_NAMES:
                 facts["inputs"].add(node.id)
 
+    return facts
+
+
+def _r_source_facts(source: str, facts: dict[str, Any]) -> dict[str, Any]:
+    for match in re.finditer(r"\b(?:library|require)\s*\(\s*['\"]?([A-Za-z0-9_.]+)['\"]?", source):
+        package = match.group(1)
+        facts["imports"].add(package)
+        if package in {"ggplot2", "leaflet", "tmap", "mapview"}:
+            facts["plotting"] = True
+    for match in re.finditer(r"\b([A-Za-z][A-Za-z0-9_.]*)::", source):
+        package = match.group(1)
+        facts["imports"].add(package)
+        if package in {"ggplot2", "leaflet", "tmap", "mapview"}:
+            facts["plotting"] = True
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        if re.search(r"\b(readline|file\.choose|menu)\s*\(", line):
+            facts["interactive"] = True
+        if re.search(r"\binstall\.packages\s*\(", line):
+            facts["magic"] = True
+        for value in re.findall(r"""['"]([^'"]+)['"]""", line):
+            if LOCAL_PATH_RE.search(value):
+                facts["hardcoded_local_paths"].add(value)
+                facts["hardcoded_values"].add(value)
+            elif REMOTE_RE.search(value):
+                facts["hardcoded_values"].add(value)
+                facts["data_access"].add(value)
+        if re.search(r"\b(read.csv|readr::read_|terra::rast|raster::raster|sf::st_read|arrow::read_|rhdf5::h5read|httr2::request|httr::GET|paws::s3)\b", line):
+            facts["data_access"].add(line.strip()[:120])
+        if re.search(r"\b(write.csv|writeLines|saveRDS|terra::writeRaster|sf::st_write|arrow::write_)", line):
+            facts["outputs"].add(line.strip()[:120])
+        if re.search(r"\b(plot|print|leaflet|ggplot|tmap::tm_)", line):
+            facts["plotting"] = True
     return facts
 
 

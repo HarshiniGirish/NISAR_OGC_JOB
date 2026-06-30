@@ -6,22 +6,27 @@ collections: null
 datetime: null
 functools: null
 glob: null
+getpass: null
 json: null
 logging: null
 math: null
 os: null
 pathlib: null
+pprint: null
 re: null
 shutil: null
+stat: null
 subprocess: null
 sys: null
 tempfile: null
 time: null
 typing: null
+urllib: null
 warnings: null
 xml: null
 
 # External Python packages.
+IPython: ipython
 numpy: numpy
 pandas: pandas
 matplotlib: matplotlib
@@ -29,7 +34,9 @@ folium: folium
 branca: branca
 PIL: pillow
 affine: affine
+backoff: backoff
 xarray: xarray
+datatree: xarray-datatree
 rioxarray: rioxarray
 dask: dask
 zarr: zarr<3
@@ -40,6 +47,7 @@ scipy: scipy
 fsspec: fsspec
 s3fs: s3fs
 requests: requests
+httpx: httpx
 earthaccess: earthaccess
 pystac: pystac
 pystac_client: pystac-client
@@ -53,3 +61,41 @@ shapely: shapely
 laspy: laspy
 pdal: pdal
 yaml: pyyaml
+contextily: contextily
+cogeo_mosaic: cogeo-mosaic
+ee: earthengine-api
+geojsoncontour: geojsoncontour
+h5glance: h5glance
+hvplot: hvplot
+ipyleaflet: ipyleaflet
+lonboard: lonboard
+memory_profiler: memory_profiler
+osgeo: gdal
+owslib: owslib
+rio_stac: rio-stac
+rio_tiler: rio-tiler
+rustac: rustac
+stac_ipyleaflet: stac-ipyleaflet
+stackstac: stackstac
+tqdm: tqdm
+
+# R packages used across MAAP documentation R notebooks.
+arrow: r-arrow
+dplyr: r-dplyr
+ggplot2: r-ggplot2
+httr: r-httr
+httr2: r-httr2
+jsonlite: r-jsonlite
+leaflet: r-leaflet
+ncdf4: r-ncdf4
+paws: r-paws
+raster: r-raster
+readr: r-readr
+reticulate: r-reticulate
+rhdf5: bioconductor-rhdf5
+rnaturalearth: r-rnaturalearth
+rstac: r-rstac
+sf: r-sf
+stars: r-stars
+terra: r-terra
+tmap: r-tmap

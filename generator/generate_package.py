@@ -78,6 +78,8 @@ TARGET_ALIASES = {"ogc_dps": "both", "ogc-dps": "both"}
 EXCLUDED_RUNTIME_INPUTS = {"out_dir", "output_dir", "dest", "outdir"}
 PYTHON_SOURCE_SUFFIXES = {".py"}
 NOTEBOOK_SOURCE_SUFFIXES = {".ipynb"}
+R_SOURCE_SUFFIXES = {".r"}
+RMARKDOWN_SOURCE_SUFFIXES = {".rmd"}
 EXECUTABLE_SOURCE_SUFFIXES = {".run", ".sh", ".bash", ".zsh"}
 OUTPUT_ARGUMENT_NAMES = {"out_dir", "output_dir", "output", "dest", "outdir"}
 IMPLICIT_DEPENDENCY_RULES = {
@@ -329,6 +331,10 @@ def source_kind_for_path(source_path: Path) -> str:
         return "notebook"
     if suffix in PYTHON_SOURCE_SUFFIXES:
         return "script"
+    if suffix in R_SOURCE_SUFFIXES:
+        return "r_script"
+    if suffix in RMARKDOWN_SOURCE_SUFFIXES:
+        return "r_markdown"
     if suffix in EXECUTABLE_SOURCE_SUFFIXES:
         return "executable"
     return "script"
@@ -336,6 +342,18 @@ def source_kind_for_path(source_path: Path) -> str:
 
 def is_python_source(source_info: dict[str, Any]) -> bool:
     return source_info.get("kind") in {"script", "notebook"}
+
+
+def is_r_source(source_info: dict[str, Any]) -> bool:
+    return source_info.get("kind") in {"r_script", "r_markdown", "r_notebook"}
+
+
+def notebook_language(notebook: dict[str, Any]) -> str:
+    metadata = notebook.get("metadata", {}) or {}
+    language_info = metadata.get("language_info", {}) or {}
+    kernelspec = metadata.get("kernelspec", {}) or {}
+    language = str(language_info.get("name") or kernelspec.get("language") or kernelspec.get("name") or "")
+    return language.lower()
 
 
 def normalize_notebook_code(source: str) -> tuple[str, list[dict[str, Any]]]:
@@ -366,6 +384,25 @@ def cell_source(cell: dict[str, Any]) -> str:
     return str(source)
 
 
+def extract_rmd_code(source: str) -> str:
+    chunks = []
+    in_chunk = False
+    current: list[str] = []
+    for line in source.splitlines():
+        if line.strip().startswith("```{r"):
+            in_chunk = True
+            current = []
+            continue
+        if in_chunk and line.strip() == "```":
+            chunks.append("\n".join(current))
+            in_chunk = False
+            current = []
+            continue
+        if in_chunk:
+            current.append(line)
+    return "\n\n".join(chunks) if chunks else source
+
+
 def is_probable_parameter_cell(source: str) -> bool:
     try:
         tree = ast.parse(source)
@@ -384,12 +421,33 @@ def is_probable_parameter_cell(source: str) -> bool:
     return has_assignment
 
 
+def is_probable_r_parameter_cell(source: str) -> bool:
+    code_lines = [
+        line.strip()
+        for line in source.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    if not code_lines:
+        return False
+    assignment_count = 0
+    for line in code_lines:
+        if re.match(r"^[A-Za-z.][A-Za-z0-9_.]*\s*(<-|=)\s*.+$", line):
+            assignment_count += 1
+            continue
+        return False
+    return assignment_count > 0
+
+
 def read_source_file(source_path: Path) -> dict[str, Any]:
     source_kind = source_kind_for_path(source_path)
     if source_kind != "notebook":
         source = source_path.read_text(encoding="utf-8")
+        if source_kind == "r_markdown":
+            source = extract_rmd_code(source)
+        language = "r" if source_kind in {"r_script", "r_markdown"} else "python"
         return {
             "kind": source_kind,
+            "language": language,
             "path": source_path,
             "source": source,
             "raw_source": source,
@@ -400,6 +458,8 @@ def read_source_file(source_path: Path) -> dict[str, Any]:
         }
 
     notebook = json.loads(source_path.read_text(encoding="utf-8"))
+    language = notebook_language(notebook)
+    notebook_kind = "r_notebook" if language.startswith("r") else "notebook"
     code_units = []
     script_parts = []
     parameters_source = ""
@@ -433,13 +493,19 @@ def read_source_file(source_path: Path) -> dict[str, Any]:
 
         if parameters_source:
             continue
-        if "parameters" in tags or (parameters_cell_index is None and is_probable_parameter_cell(normalized_source)):
+        is_parameters_candidate = (
+            is_probable_r_parameter_cell(normalized_source)
+            if notebook_kind == "r_notebook"
+            else is_probable_parameter_cell(normalized_source)
+        )
+        if "parameters" in tags or (parameters_cell_index is None and is_parameters_candidate):
             parameters_source = normalized_source
             parameters_cell_index = cell_index
 
     script_source = "\n\n".join(script_parts).strip() + "\n"
     return {
-        "kind": "notebook",
+        "kind": notebook_kind,
+        "language": "r" if notebook_kind == "r_notebook" else "python",
         "path": source_path,
         "source": script_source,
         "raw_source": "\n\n".join(cell.get("raw_source", cell["source"]) for cell in code_units),
@@ -650,6 +716,49 @@ def infer_papermill_inputs(parameters_source: str) -> dict[str, dict[str, Any]]:
     return inputs
 
 
+def parse_r_literal(value: str) -> Any:
+    value = value.strip().rstrip(";")
+    if value in {"TRUE", "True"}:
+        return True
+    if value in {"FALSE", "False"}:
+        return False
+    if value in {"NULL", "NA"}:
+        return ""
+    quoted = re.match(r"""^['"](.*)['"]$""", value)
+    if quoted:
+        return quoted.group(1)
+    try:
+        if "." in value:
+            return float(value)
+        return int(value)
+    except ValueError:
+        return value
+
+
+def infer_r_parameter_inputs(parameters_source: str) -> dict[str, dict[str, Any]]:
+    inputs: dict[str, dict[str, Any]] = {}
+    for line in parameters_source.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = re.match(r"^([A-Za-z.][A-Za-z0-9_.]*)\s*(<-|=)\s*(.+?)\s*$", stripped)
+        if not match:
+            continue
+        name, _, raw_value = match.groups()
+        normalized = name.replace(".", "_")
+        if normalized in EXCLUDED_RUNTIME_INPUTS:
+            continue
+        value = parse_r_literal(raw_value)
+        inputs[normalized] = {
+            "type": infer_type_from_value(value),
+            "default": stringify_default(value),
+            "description": "Parameter inferred from an R notebook/script assignment cell.",
+            "inferred": True,
+            "source": "r_parameters",
+        }
+    return inputs
+
+
 def infer_description_from_source(source: str, source_path: Path) -> str:
     try:
         module = ast.parse(source)
@@ -673,6 +782,8 @@ def infer_description(script_path: Path) -> str:
 
 
 def infer_inputs(source_info: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    if is_r_source(source_info):
+        return infer_r_parameter_inputs(source_info.get("parameters_source", ""))
     if not is_python_source(source_info):
         return {}
     inputs = infer_papermill_inputs(source_info.get("parameters_source", ""))
@@ -691,7 +802,12 @@ def collect_source_metadata(source_info: dict[str, Any]) -> dict[str, Any]:
 
 
 def infer_runtime_config(source_info: dict[str, Any]) -> dict[str, str]:
-    runtime_type = "python" if is_python_source(source_info) else "executable"
+    if is_python_source(source_info):
+        runtime_type = "python"
+    elif is_r_source(source_info):
+        runtime_type = "r"
+    else:
+        runtime_type = "executable"
     output_argument = ""
 
     if is_python_source(source_info):
@@ -730,7 +846,12 @@ def infer_runtime_config(source_info: dict[str, Any]) -> dict[str, str]:
 def infer_app_config(source_path: Path, source_info: dict[str, Any], target: str) -> dict[str, Any]:
     metadata = collect_source_metadata(source_info)
     name = slugify_name(str(metadata.get("APP_NAME") or source_path.stem))
-    entrypoint_suffix = ".py" if source_info["kind"] == "notebook" else source_path.suffix
+    if is_r_source(source_info):
+        entrypoint_suffix = ".R"
+    elif source_info["kind"] == "notebook":
+        entrypoint_suffix = ".py"
+    else:
+        entrypoint_suffix = source_path.suffix
     entrypoint = f"{name}{entrypoint_suffix}"
     return {
         "name": name,
@@ -788,6 +909,21 @@ def detect_imports_from_source(source: str) -> list[str]:
                 imports.add(node.module.split(".")[0])
 
     return sorted(imports)
+
+
+def detect_r_imports_from_source(source: str) -> list[str]:
+    imports = set()
+    for match in re.finditer(r"\b(?:library|require)\s*\(\s*['\"]?([A-Za-z0-9_.]+)['\"]?", source):
+        imports.add(match.group(1))
+    for match in re.finditer(r"\b([A-Za-z][A-Za-z0-9_.]*)::", source):
+        imports.add(match.group(1))
+    return sorted(imports)
+
+
+def detect_imports_for_source(source_info: dict[str, Any]) -> list[str]:
+    if is_r_source(source_info):
+        return detect_r_imports_from_source(source_info["source"])
+    return detect_imports_from_source(source_info["source"])
 
 
 def detect_imports(script_path: Path) -> list[str]:
@@ -1083,6 +1219,15 @@ def build_run_commands(runtime_config: dict[str, Any], entrypoint: str) -> dict[
                 f'bash "${{basedir}}/{entrypoint}"{output_arg} "$@"'
             ),
             "local": f'  bash "${{basedir}}/{entrypoint}"{output_arg} "$@"',
+        }
+
+    if runtime_type == "r":
+        return {
+            "conda": (
+                f'  conda run --live-stream -p "${{ENV_PREFIX}}" '
+                f'Rscript "${{basedir}}/{entrypoint}"{output_arg} "$@"'
+            ),
+            "local": f'  Rscript "${{basedir}}/{entrypoint}"{output_arg} "$@"',
         }
 
     return {
@@ -1419,6 +1564,8 @@ def build_requirements_txt(dependencies: dict[str, list[str]]) -> str:
             continue
         if dependency == "pip" or dependency.startswith("python="):
             continue
+        if dependency.startswith("r-") or dependency.startswith("bioconductor-"):
+            continue
         pip_lines.append(dependency)
 
     pip_lines.extend(dependencies.get("pip", []))
@@ -1505,6 +1652,8 @@ def add_data_access(
 
 
 def analyze_source(source_info: dict[str, Any], detected_imports: list[str], inputs: dict[str, Any]) -> dict[str, Any]:
+    if is_r_source(source_info):
+        return analyze_r_source(source_info, detected_imports, inputs)
     source = source_info["source"]
     data_access: dict[str, list[dict[str, Any]]] = {
         "s3": [],
@@ -1723,6 +1872,84 @@ def analyze_source(source_info: dict[str, Any], detected_imports: list[str], inp
     }
 
 
+def analyze_r_source(source_info: dict[str, Any], detected_imports: list[str], inputs: dict[str, Any]) -> dict[str, Any]:
+    source = source_info["source"]
+    data_access: dict[str, list[dict[str, Any]]] = {
+        "s3": [],
+        "stac": [],
+        "cmr": [],
+        "local": [],
+    }
+    issues: list[dict[str, str]] = []
+
+    for module_name in detected_imports:
+        if module_name in {"paws", "aws.s3"}:
+            add_data_access(data_access, "s3", f"library({module_name})", "imports")
+        if module_name in {"rstac"}:
+            add_data_access(data_access, "stac", f"library({module_name})", "imports")
+        if module_name in {"reticulate"}:
+            add_data_access(data_access, "cmr", f"library({module_name})", "imports")
+
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        location = f"line {lineno}"
+        for value in re.findall(r"""(?:s3://|https?://|/|\./|\.\./)[^\s"')\],]+""", line):
+            value = value.rstrip("),;")
+            access_type = classify_data_reference(value)
+            if access_type:
+                add_data_access(data_access, access_type, value, location)
+            elif looks_like_local_file_path(value):
+                add_data_access(data_access, "local", value, location)
+                issues.append(
+                    issue(
+                        "hardcoded_local_path",
+                        "warning",
+                        f"Hardcoded local path detected: {value}",
+                        "Declare the path as an input parameter or stage it inside the runtime output/work directory.",
+                        location,
+                    )
+                )
+        if re.search(r"\b(readline|file\.choose|menu)\s*\(", line):
+            issues.append(
+                issue(
+                    "interactive_runtime",
+                    "error",
+                    "R code appears to prompt interactively.",
+                    "Replace prompts with declared app.yaml inputs or environment variables.",
+                    location,
+                )
+            )
+        if re.search(r"\binstall\.packages\s*\(", line):
+            issues.append(
+                issue(
+                    "r_install_packages",
+                    "error",
+                    "install.packages() is not portable inside a DPS/OGC runtime cell.",
+                    "Move package installation into env.yml, Dockerfile, or build.sh.",
+                    location,
+                )
+            )
+
+    if not inputs:
+        issues.append(
+            issue(
+                "missing_declared_parameters",
+                "info",
+                "No app inputs were inferred or declared.",
+                "Add an R parameter cell or app.yaml inputs section.",
+            )
+        )
+
+    return {
+        "source_kind": source_info["kind"],
+        "code_cell_count": len(source_info.get("code_units", [])),
+        "parameters_cell_index": source_info.get("parameters_cell_index"),
+        "data_access": data_access,
+        "issues": issues,
+        "parse_errors": [],
+        "lint_tools": lint_tool_summary(source_info),
+    }
+
+
 def detect_implicit_cell_state(source_info: dict[str, Any]) -> list[dict[str, str]]:
     if source_info["kind"] != "notebook":
         return []
@@ -1800,17 +2027,28 @@ def build_build_script(
     validation_imports = [
         module_name
         for module_name in detected_imports
-        if dependency_map.get(module_name) is not None
+        if dependency_map.get(module_name) is not None and runtime_config.get("type") == "python"
     ]
     validation_import_block = "\n".join(f"import {module_name}" for module_name in validation_imports)
     if runtime_config.get("type") == "executable":
         conda_entrypoint_validation = f'  chmod +x "${{basedir}}/{entrypoint}"'
         local_entrypoint_validation = f'  chmod +x "${{basedir}}/{entrypoint}"'
+    elif runtime_config.get("type") == "r":
+        conda_entrypoint_validation = (
+            f'  conda run -p "${{ENV_PREFIX}}" Rscript --vanilla -e \'parse(file="${{basedir}}/{entrypoint}")\''
+        )
+        local_entrypoint_validation = f'  Rscript --vanilla -e \'parse(file="${{basedir}}/{entrypoint}")\''
     else:
         conda_entrypoint_validation = (
             f'  conda run -p "${{ENV_PREFIX}}" python -m py_compile "${{basedir}}/{entrypoint}"'
         )
         local_entrypoint_validation = f'  "${{PYTHON_BIN}}" -m py_compile "${{basedir}}/{entrypoint}"'
+    import_validation_block = ""
+    if runtime_config.get("type") == "python":
+        import_validation_block = f'''  conda run -p "${{ENV_PREFIX}}" python - <<'PY'
+{validation_import_block}
+print("Environment validation successful.")
+PY'''
 
     return f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -1839,10 +2077,7 @@ if command -v conda >/dev/null 2>&1; then
   conda env create -f "${{basedir}}/env.yml" --prefix "${{ENV_PREFIX}}"
   conda clean -afy
 {conda_entrypoint_validation}
-  conda run -p "${{ENV_PREFIX}}" python - <<'PY'
-{validation_import_block}
-print("Environment validation successful.")
-PY
+{import_validation_block}
 else
   PYTHON_BIN="${{PYTHON_BIN:-python3}}"
   if ! command -v "${{PYTHON_BIN}}" >/dev/null 2>&1; then
@@ -2301,7 +2536,7 @@ def main() -> None:
 
     entrypoint_dst = output_dir / entrypoint
 
-    detected_imports = detect_imports_from_source(source_info["source"])
+    detected_imports = detect_imports_for_source(source_info)
     app_config["base_container"] = infer_base_container(
         detected_imports, app_config.get("base_container", DEFAULT_BASE_CONTAINER)
     )
@@ -2312,6 +2547,12 @@ def main() -> None:
         if "pyyaml" not in implicit_dependencies["conda"]:
             implicit_dependencies["conda"].append("pyyaml")
             implicit_dependencies["conda"].sort()
+    if is_r_source(source_info):
+        implicit_dependencies.setdefault("conda", [])
+        for package_name in ("r-base", "r-optparse"):
+            if package_name not in implicit_dependencies["conda"]:
+                implicit_dependencies["conda"].append(package_name)
+        implicit_dependencies["conda"].sort()
     dynamic_dependency_report = (
         resolve_dynamic_dependency_map(
             detected_imports=detected_imports,
