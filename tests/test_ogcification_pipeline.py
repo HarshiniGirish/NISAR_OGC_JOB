@@ -413,6 +413,58 @@ def process():
             self.assertTrue((output_dir / "llm_repair_plan.md").exists())
             self.assertTrue((output_dir / "safe_autofix_report.md").exists())
 
+    def test_generator_supports_r_notebook_packaging(self) -> None:
+        notebook = {
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "metadata": {"tags": ["parameters"]},
+                    "source": ["asset_href <- 's3://bucket/example.tif'\n", "output_dir <- 'output'\n"],
+                },
+                {
+                    "cell_type": "code",
+                    "metadata": {},
+                    "source": [
+                        "library(terra)\n",
+                        "x <- terra::rast(asset_href)\n",
+                        "dir.create(output_dir, showWarnings = FALSE)\n",
+                        "terra::writeRaster(x, file.path(output_dir, 'result.tif'), overwrite=TRUE)\n",
+                    ],
+                },
+            ],
+            "metadata": {
+                "kernelspec": {"name": "ir", "language": "R", "display_name": "R"},
+                "language_info": {"name": "R"},
+            },
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            notebook_path = Path(tmpdir) / "r_demo.ipynb"
+            output_dir = Path(tmpdir) / "generated_r"
+            notebook_path.write_text(json.dumps(notebook), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "generator/generate_package.py",
+                    "--input",
+                    str(notebook_path),
+                    "--scan-dps-readiness",
+                    "--dynamic-dependency-resolution",
+                    "--output-dir",
+                    str(output_dir),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue((output_dir / "r_demo.R").exists())
+            self.assertIn("Rscript", (output_dir / "run.sh").read_text(encoding="utf-8"))
+            env_text = (output_dir / "env.yml").read_text(encoding="utf-8")
+            self.assertIn("r-base", env_text)
+            self.assertIn("r-terra", env_text)
+
 
 if __name__ == "__main__":
     unittest.main()
